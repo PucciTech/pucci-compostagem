@@ -17,7 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Button } from '@/components/Button';
 import { syncService } from '@/services/sync';
 import { useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons'; // Importando ícones
+import { Ionicons } from '@expo/vector-icons';
 
 const PALETTE = {
     verdePrimario: '#5D7261',
@@ -43,6 +43,8 @@ interface MaterialEntry {
     peso: string;
     origem: string;
     destino?: 'patio' | 'piscinao';
+    sincronizado?: boolean; // Adicionado para controle interno
+    deletado?: boolean;     // Adicionado para controle de exclusão
 }
 
 export default function EntradaMaterialScreen() {
@@ -53,7 +55,7 @@ export default function EntradaMaterialScreen() {
     const [novaOrigemText, setNovaOrigemText] = useState('');
     const [entries, setEntries] = useState<MaterialEntry[]>([]);
     const [origens, setOrigens] = useState(['Sabesp', 'Ambient']);
-    const [editingId, setEditingId] = useState<string | null>(null); // ✅ Estado para controle de edição
+    const [editingId, setEditingId] = useState<string | null>(null);
 
     const [formData, setFormData] = useState({
         data: new Date().toLocaleDateString('pt-BR'),
@@ -75,7 +77,7 @@ export default function EntradaMaterialScreen() {
             setLoading(true);
             const registrosExistentes = await AsyncStorage.getItem('materiaisRegistrados');
             if (registrosExistentes) {
-                setEntries(JSON.parse(registrosExistentes)); // Mantém a ordem original salva
+                setEntries(JSON.parse(registrosExistentes));
             }
         } catch (error) {
             console.error(error);
@@ -126,7 +128,9 @@ export default function EntradaMaterialScreen() {
         });
     };
 
-    // ✅ FUNÇÃO DE SALVAR (CRIA OU ATUALIZA)
+    // ============================================================
+    // 🔥 CORREÇÃO 1: SALVAR E EDITAR (Atualiza Sync)
+    // ============================================================
     const handleSaveMaterial = async () => {
         if (!formData.data.trim()) { Alert.alert('Erro', 'Digite a data'); return; }
         if (!validarData(formData.data)) { Alert.alert('Erro', 'Data inválida'); return; }
@@ -134,13 +138,14 @@ export default function EntradaMaterialScreen() {
         if (!formData.peso.trim() || parseFloat(formData.peso) <= 0) { Alert.alert('Erro', 'Peso inválido'); return; }
 
         const newEntry: MaterialEntry = {
-            id: editingId || Date.now().toString(), // Usa ID existente se editando
+            id: editingId || Date.now().toString(),
             data: formData.data,
             tipoMaterial: formData.tipoMaterial,
             numeroMTR: formData.numeroMTR,
             peso: formData.peso,
             origem: formData.origem,
-            destino: formData.tipoMaterial === 'Biossólido' ? (formData.destino as 'patio' | 'piscinao') : 'patio'
+            destino: formData.tipoMaterial === 'Biossólido' ? (formData.destino as 'patio' | 'piscinao') : 'patio',
+            sincronizado: false // Sempre marca como não sincronizado ao salvar
         };
 
         try {
@@ -154,14 +159,14 @@ export default function EntradaMaterialScreen() {
                 novaLista = [newEntry, ...novaLista];
             }
 
+            // 1. Salva Localmente
             await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novaLista));
-            
-            // Se for novo, adiciona na fila de sync (edição precisaria de lógica extra no sync)
-            if (!editingId) {
-                await syncService.adicionarFila('material', newEntry);
-            }
-
             setEntries(novaLista);
+            
+            // 2. 🔥 MANDA PARA O SYNC (SEJA NOVO OU EDIÇÃO)
+            // Antes tinha um 'if (!editingId)', removi para garantir que edições subam!
+            await syncService.adicionarFila('material', newEntry);
+
             resetForm();
             
             const msgDestino = newEntry.destino === 'piscinao' ? 'no PISCINÃO 💧' : 'no PÁTIO 🌱';
@@ -172,7 +177,6 @@ export default function EntradaMaterialScreen() {
         }
     };
 
-    // ✅ FUNÇÃO PARA INICIAR EDIÇÃO
     const handleEdit = (item: MaterialEntry) => {
         setFormData({
             data: item.data,
@@ -186,7 +190,9 @@ export default function EntradaMaterialScreen() {
         setShowForm(true);
     };
 
-    // ✅ FUNÇÃO PARA EXCLUIR
+    // ============================================================
+    // 🔥 CORREÇÃO 2: EXCLUSÃO (Envia flag deletado)
+    // ============================================================
     const handleDelete = (id: string) => {
         Alert.alert(
             'Excluir Registro',
@@ -197,10 +203,32 @@ export default function EntradaMaterialScreen() {
                     text: 'Apagar', 
                     style: 'destructive',
                     onPress: async () => {
-                        const novaLista = entries.filter(item => item.id !== id);
-                        setEntries(novaLista);
-                        await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novaLista));
-                        if (editingId === id) resetForm();
+                        try {
+                            // 1. Encontra o item antes de apagar da lista
+                            const itemParaDeletar = entries.find(i => i.id === id);
+                            
+                            if (itemParaDeletar) {
+                                // 2. Cria o objeto "morto" para o sync
+                                const itemMorto = { 
+                                    ...itemParaDeletar, 
+                                    deletado: true, 
+                                    sincronizado: false 
+                                };
+
+                                // 3. Envia para a fila de sincronização
+                                await syncService.adicionarFila('material', itemMorto);
+                            }
+
+                            // 4. Remove da lista visual
+                            const novaLista = entries.filter(item => item.id !== id);
+                            setEntries(novaLista);
+                            await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novaLista));
+
+                            if (editingId === id) resetForm();
+
+                        } catch (error) {
+                            Alert.alert("Erro", "Falha ao excluir item");
+                        }
                     }
                 }
             ]
@@ -231,7 +259,6 @@ export default function EntradaMaterialScreen() {
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 <View style={styles.header}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color={PALETTE.verdePrimario} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Entrada de Material</Text>
                     <View style={styles.backButton} />
@@ -440,7 +467,6 @@ function StatBox({ label, value, unit, color }: any) {
     );
 }
 
-// ✅ COMPONENTE ATUALIZADO COM BOTÕES DE AÇÃO
 function MaterialCard({ item, onEdit, onDelete }: { item: MaterialEntry, onEdit: () => void, onDelete: () => void }) {
     const isPiscinao = item.destino === 'piscinao';
     
@@ -460,7 +486,6 @@ function MaterialCard({ item, onEdit, onDelete }: { item: MaterialEntry, onEdit:
                     </View>
                 </View>
 
-                {/* ✅ BOTÕES DE AÇÃO */}
                 <View style={styles.actionButtons}>
                     <TouchableOpacity onPress={onEdit} style={styles.actionBtn}>
                         <Ionicons name="pencil" size={20} color={PALETTE.verdePrimario} />
@@ -570,7 +595,6 @@ const styles = StyleSheet.create({
     materialCardTitle: { fontWeight: 'bold' },
     materialCardDate: { fontSize: 11, color: PALETTE.cinza },
     
-    // ✅ NOVOS ESTILOS PARA OS BOTÕES
     actionButtons: { flexDirection: 'row', gap: 10 },
     actionBtn: { padding: 5 },
 
