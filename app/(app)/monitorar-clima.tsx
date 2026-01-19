@@ -7,8 +7,9 @@ import {
     TouchableOpacity,
     Alert,
     TextInput as RNTextInput,
+    ActivityIndicator,
     Modal,
-    ActivityIndicator
+    FlatList
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -17,6 +18,7 @@ import { Button } from '@/components/Button';
 import { syncService } from '@/services/sync';
 import { useFocusEffect } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
+import { Ionicons } from '@expo/vector-icons';
 
 const PALETTE = {
     verdePrimario: '#5D7261',
@@ -31,6 +33,7 @@ const PALETTE = {
     erro: '#D32F2F',
     sucesso: '#4CAF50',
     azul: '#2196F3',
+    azulEscuro: '#1565C0',
     laranja: '#FF9800'
 };
 
@@ -48,6 +51,7 @@ interface Leira {
     id: string;
     nome: string;
     numeroLeira: number;
+    lote: string; // Adicionado campo lote
     status: string;
 }
 
@@ -60,6 +64,12 @@ export default function MonitorarClimaScreen() {
     const [leiras, setLeiras] = useState<Leira[]>([]);
     const [registros, setRegistros] = useState<MonitoramentoChuva[]>([]);
     
+    // Filtros
+    const [filtroLote, setFiltroLote] = useState('');
+    const [filtroLeira, setFiltroLeira] = useState('');
+    const [showModalFiltro, setShowModalFiltro] = useState(false);
+    const [tipoFiltro, setTipoFiltro] = useState<'lote' | 'leira'>('lote');
+
     // Formulário
     const [formData, setFormData] = useState({
         data: new Date().toLocaleDateString('pt-BR'),
@@ -91,6 +101,7 @@ export default function MonitorarClimaScreen() {
                         id: l.id,
                         nome: `Leira #${l.numeroLeira}`,
                         numeroLeira: l.numeroLeira,
+                        lote: l.lote || 'S/L', // Garante que tenha lote
                         status: l.status
                     }));
                 
@@ -113,6 +124,50 @@ export default function MonitorarClimaScreen() {
         }
     };
 
+    // ===== LÓGICA DE FILTRAGEM =====
+    const registrosFiltrados = registros.filter(reg => {
+        // Encontra a leira associada a este registro
+        const leiraAssociada = leiras.find(l => l.id === reg.leiraId);
+        
+        // Se a leira foi excluída mas o registro existe, mostramos se não houver filtro
+        if (!leiraAssociada) return !filtroLote && !filtroLeira;
+
+        // Filtro de Lote
+        if (filtroLote && leiraAssociada.lote !== filtroLote) return false;
+
+        // Filtro de Leira (Número)
+        if (filtroLeira && leiraAssociada.numeroLeira.toString() !== filtroLeira) return false;
+
+        return true;
+    });
+
+    // Listas únicas para os modais de filtro
+    const lotesUnicos = Array.from(new Set(leiras.map(l => l.lote))).sort();
+    const leirasUnicas = leiras
+        .filter(l => !filtroLote || l.lote === filtroLote) // Se tem lote selecionado, mostra só leiras dele
+        .map(l => l.numeroLeira.toString())
+        .sort((a, b) => Number(a) - Number(b));
+
+    const abrirFiltro = (tipo: 'lote' | 'leira') => {
+        setTipoFiltro(tipo);
+        setShowModalFiltro(true);
+    };
+
+    const selecionarFiltro = (valor: string) => {
+        if (tipoFiltro === 'lote') {
+            setFiltroLote(valor);
+            setFiltroLeira(''); // Reseta leira ao mudar lote
+        } else {
+            setFiltroLeira(valor);
+        }
+        setShowModalFiltro(false);
+    };
+
+    const limparFiltros = () => {
+        setFiltroLote('');
+        setFiltroLeira('');
+    };
+
     // ===== FORMATAR DATA =====
     const formatarData = (text: string) => {
         let formatted = text.replace(/\D/g, '');
@@ -123,21 +178,12 @@ export default function MonitorarClimaScreen() {
 
     // ===== SALVAR =====
     const handleSave = async () => {
-        if (!formData.data.trim()) {
-            Alert.alert('Erro', 'Digite a data');
-            return;
-        }
-        if (!formData.precipitacao.trim()) {
-            Alert.alert('Erro', 'Digite a precipitação');
-            return;
-        }
+        if (!formData.data.trim()) { Alert.alert('Erro', 'Digite a data'); return; }
+        if (!formData.precipitacao.trim()) { Alert.alert('Erro', 'Digite a precipitação'); return; }
 
         const leirasAlvo = aplicarParaTodas ? leiras.map(l => l.id) : [formData.leiraId];
         
-        if (leirasAlvo.length === 0) {
-            Alert.alert('Erro', 'Nenhuma leira selecionada');
-            return;
-        }
+        if (leirasAlvo.length === 0) { Alert.alert('Erro', 'Nenhuma leira selecionada'); return; }
 
         const novosRegistros: MonitoramentoChuva[] = [];
         const [dia, mes, ano] = formData.data.split('/').map(Number);
@@ -173,9 +219,7 @@ export default function MonitorarClimaScreen() {
             });
             setAplicarParaTodas(false);
             setShowForm(false);
-            
             Alert.alert('Sucesso! ✅', 'Monitoramento registrado com sucesso!');
-
         } catch (error) {
             Alert.alert('Erro', 'Falha ao salvar');
         }
@@ -203,19 +247,42 @@ export default function MonitorarClimaScreen() {
                 {/* ===== HEADER ===== */}
                 <View style={styles.header}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                        <Text style={styles.backIcon}></Text>
+                        <Ionicons name="arrow-back" size={24} color={PALETTE.verdePrimario} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Monitorar Clima</Text>
                     <View style={styles.backButton} />
                 </View>
 
-                {/* ===== INFO BOX ===== */}
-                <View style={styles.infoBox}>
-                    <Text style={styles.infoIcon}>🌧️</Text>
-                    <View style={styles.infoContent}>
-                        <Text style={styles.infoTitle}>Registre Chuva e Umidade</Text>
-                        <Text style={styles.infoText}>Acompanhe o clima das suas leiras</Text>
+                {/* ===== BARRA DE FILTROS (NOVO) ===== */}
+                <View style={styles.filterContainer}>
+                    <Text style={styles.filterLabel}>Filtrar Registros:</Text>
+                    <View style={styles.filterRow}>
+                        <TouchableOpacity 
+                            style={[styles.filterBtn, filtroLote ? styles.filterBtnActive : null]} 
+                            onPress={() => abrirFiltro('lote')}
+                        >
+                            <Text style={[styles.filterBtnText, filtroLote ? styles.filterBtnTextActive : null]}>
+                                {filtroLote ? `Lote: ${filtroLote}` : 'Todos Lotes'}
+                            </Text>
+                            <Ionicons name="chevron-down" size={14} color={filtroLote ? PALETTE.branco : PALETTE.cinza} />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                            style={[styles.filterBtn, filtroLeira ? styles.filterBtnActive : null]} 
+                            onPress={() => abrirFiltro('leira')}
+                        >
+                            <Text style={[styles.filterBtnText, filtroLeira ? styles.filterBtnTextActive : null]}>
+                                {filtroLeira ? `Leira #${filtroLeira}` : 'Todas Leiras'}
+                            </Text>
+                            <Ionicons name="chevron-down" size={14} color={filtroLeira ? PALETTE.branco : PALETTE.cinza} />
+                        </TouchableOpacity>
                     </View>
+                    
+                    {(filtroLote || filtroLeira) && (
+                        <TouchableOpacity onPress={limparFiltros} style={styles.clearFilterBtn}>
+                            <Text style={styles.clearFilterText}>Limpar Filtros ✕</Text>
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 {/* ===== STATS ===== */}
@@ -275,7 +342,7 @@ export default function MonitorarClimaScreen() {
                                         style={{flex: 1, color: PALETTE.preto}}
                                     >
                                         {leiras.map(l => (
-                                            <Picker.Item key={l.id} label={`${l.nome} - ${l.status}`} value={l.id} />
+                                            <Picker.Item key={l.id} label={`${l.nome} (Lote ${l.lote})`} value={l.id} />
                                         ))}
                                     </Picker>
                                 </View>
@@ -354,11 +421,15 @@ export default function MonitorarClimaScreen() {
 
                 {/* ===== LIST SECTION ===== */}
                 <View style={styles.listSection}>
-                    <Text style={styles.listTitle}>Últimos Registros</Text>
+                    <Text style={styles.listTitle}>
+                        {filtroLeira ? `Registros da Leira #${filtroLeira}` : 'Últimos Registros'}
+                    </Text>
 
-                    {registros.length > 0 ? (
-                        registros.map((item) => {
-                            const nomeLeira = leiras.find(l => l.id === item.leiraId)?.nome || 'Leira Excluída';
+                    {registrosFiltrados.length > 0 ? (
+                        registrosFiltrados.map((item) => {
+                            const leira = leiras.find(l => l.id === item.leiraId);
+                            const nomeLeira = leira ? `${leira.nome} (Lote ${leira.lote})` : 'Leira Excluída';
+                            
                             return (
                                 <View key={item.id} style={styles.materialCard}>
                                     <View style={styles.materialCardHeader}>
@@ -399,12 +470,39 @@ export default function MonitorarClimaScreen() {
                     ) : (
                         <View style={styles.emptyState}>
                             <Text style={styles.emptyIcon}>🌤️</Text>
-                            <Text style={styles.emptyText}>Nenhum registro climático</Text>
-                            <Text style={styles.emptySubtext}>Clique em "Adicionar" para começar</Text>
+                            <Text style={styles.emptyText}>Nenhum registro encontrado</Text>
+                            <Text style={styles.emptySubtext}>Tente mudar os filtros ou adicione um novo</Text>
                         </View>
                     )}
                 </View>
             </ScrollView>
+
+            {/* MODAL DE FILTRO */}
+            <Modal visible={showModalFiltro} transparent animationType="slide" onRequestClose={() => setShowModalFiltro(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Selecione {tipoFiltro === 'lote' ? 'o Lote' : 'a Leira'}</Text>
+                            <TouchableOpacity onPress={() => setShowModalFiltro(false)}>
+                                <Ionicons name="close" size={24} color={PALETTE.cinza} />
+                            </TouchableOpacity>
+                        </View>
+                        
+                        <FlatList
+                            data={tipoFiltro === 'lote' ? lotesUnicos : leirasUnicas}
+                            keyExtractor={(item) => item}
+                            renderItem={({ item }) => (
+                                <TouchableOpacity style={styles.modalItem} onPress={() => selecionarFiltro(item)}>
+                                    <Text style={styles.modalItemText}>
+                                        {tipoFiltro === 'lote' ? `Lote ${item}` : `Leira #${item}`}
+                                    </Text>
+                                    <Ionicons name="chevron-forward" size={20} color={PALETTE.cinzaClaro} />
+                                </TouchableOpacity>
+                            )}
+                        />
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -422,19 +520,24 @@ function StatBox({ label, value, unit, color }: any) {
     );
 }
 
-// ===== STYLES (CÓPIA EXATA DE ENTRADA MATERIAL) =====
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: PALETTE.verdeClaro },
     scrollContent: { flexGrow: 1, paddingBottom: 30 },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: PALETTE.branco, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro2 },
     backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-    backIcon: { fontSize: 24, fontWeight: '700', color: PALETTE.verdePrimario },
     headerTitle: { fontSize: 18, fontWeight: '700', color: PALETTE.preto },
-    infoBox: { flexDirection: 'row', backgroundColor: PALETTE.branco, marginHorizontal: 20, marginTop: 16, marginBottom: 16, borderRadius: 12, padding: 14, alignItems: 'center', borderLeftWidth: 4, borderLeftColor: PALETTE.terracota },
-    infoIcon: { fontSize: 32, marginRight: 12 },
-    infoContent: { flex: 1 },
-    infoTitle: { fontSize: 13, fontWeight: '700', color: PALETTE.preto, marginBottom: 4 },
-    infoText: { fontSize: 12, color: PALETTE.cinza },
+    
+    // FILTROS
+    filterContainer: { backgroundColor: PALETTE.branco, padding: 15, marginBottom: 15, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro2 },
+    filterLabel: { fontSize: 11, fontWeight: '700', color: PALETTE.cinza, marginBottom: 8, textTransform: 'uppercase' },
+    filterRow: { flexDirection: 'row', gap: 10 },
+    filterBtn: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: PALETTE.cinzaClaro2, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: PALETTE.cinzaClaro },
+    filterBtnActive: { backgroundColor: PALETTE.azul, borderColor: PALETTE.azul },
+    filterBtnText: { fontSize: 12, fontWeight: '600', color: PALETTE.cinza },
+    filterBtnTextActive: { color: PALETTE.branco },
+    clearFilterBtn: { alignSelf: 'flex-end', marginTop: 8 },
+    clearFilterText: { fontSize: 11, fontWeight: '700', color: PALETTE.erro },
+
     statsContainer: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 20, gap: 10 },
     statBox: { flex: 1, backgroundColor: PALETTE.branco, borderRadius: 12, padding: 14, borderTopWidth: 3 },
     statBoxLabel: { fontSize: 11, color: PALETTE.cinza, fontWeight: '600', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -476,5 +579,13 @@ const styles = StyleSheet.create({
     emptyState: { alignItems: 'center', paddingVertical: 40 },
     emptyIcon: { fontSize: 48, marginBottom: 12 },
     emptyText: { fontSize: 14, fontWeight: '700', color: PALETTE.preto, marginBottom: 6 },
-    emptySubtext: { fontSize: 12, color: PALETTE.cinza }
+    emptySubtext: { fontSize: 12, color: PALETTE.cinza },
+
+    // MODAL
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    modalContent: { backgroundColor: PALETTE.branco, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '70%' },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+    modalTitle: { fontSize: 18, fontWeight: '700', color: PALETTE.preto },
+    modalItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro2, flexDirection: 'row', justifyContent: 'space-between' },
+    modalItemText: { fontSize: 16, color: PALETTE.preto },
 });

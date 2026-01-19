@@ -43,8 +43,8 @@ interface MaterialEntry {
     peso: string;
     origem: string;
     destino?: 'patio' | 'piscinao';
-    sincronizado?: boolean; // Adicionado para controle interno
-    deletado?: boolean;     // Adicionado para controle de exclusão
+    sincronizado?: boolean;
+    deletado?: boolean;
 }
 
 export default function EntradaMaterialScreen() {
@@ -128,9 +128,6 @@ export default function EntradaMaterialScreen() {
         });
     };
 
-    // ============================================================
-    // 🔥 CORREÇÃO 1: SALVAR E EDITAR (Atualiza Sync)
-    // ============================================================
     const handleSaveMaterial = async () => {
         if (!formData.data.trim()) { Alert.alert('Erro', 'Digite a data'); return; }
         if (!validarData(formData.data)) { Alert.alert('Erro', 'Data inválida'); return; }
@@ -145,28 +142,22 @@ export default function EntradaMaterialScreen() {
             peso: formData.peso,
             origem: formData.origem,
             destino: formData.tipoMaterial === 'Biossólido' ? (formData.destino as 'patio' | 'piscinao') : 'patio',
-            sincronizado: false // Sempre marca como não sincronizado ao salvar
+            sincronizado: false
         };
 
         try {
             let novaLista = [...entries];
 
             if (editingId) {
-                // Edição: Substitui o item antigo
                 novaLista = novaLista.map(item => item.id === editingId ? newEntry : item);
             } else {
-                // Criação: Adiciona no topo
                 novaLista = [newEntry, ...novaLista];
             }
 
-            // 1. Salva Localmente
             await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novaLista));
-            setEntries(novaLista);
-            
-            // 2. 🔥 MANDA PARA O SYNC (SEJA NOVO OU EDIÇÃO)
-            // Antes tinha um 'if (!editingId)', removi para garantir que edições subam!
             await syncService.adicionarFila('material', newEntry);
 
+            setEntries(novaLista);
             resetForm();
             
             const msgDestino = newEntry.destino === 'piscinao' ? 'no PISCINÃO 💧' : 'no PÁTIO 🌱';
@@ -190,9 +181,6 @@ export default function EntradaMaterialScreen() {
         setShowForm(true);
     };
 
-    // ============================================================
-    // 🔥 CORREÇÃO 2: EXCLUSÃO (Envia flag deletado)
-    // ============================================================
     const handleDelete = (id: string) => {
         Alert.alert(
             'Excluir Registro',
@@ -204,28 +192,15 @@ export default function EntradaMaterialScreen() {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            // 1. Encontra o item antes de apagar da lista
                             const itemParaDeletar = entries.find(i => i.id === id);
-                            
                             if (itemParaDeletar) {
-                                // 2. Cria o objeto "morto" para o sync
-                                const itemMorto = { 
-                                    ...itemParaDeletar, 
-                                    deletado: true, 
-                                    sincronizado: false 
-                                };
-
-                                // 3. Envia para a fila de sincronização
+                                const itemMorto = { ...itemParaDeletar, deletado: true, sincronizado: false };
                                 await syncService.adicionarFila('material', itemMorto);
                             }
-
-                            // 4. Remove da lista visual
                             const novaLista = entries.filter(item => item.id !== id);
                             setEntries(novaLista);
                             await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novaLista));
-
                             if (editingId === id) resetForm();
-
                         } catch (error) {
                             Alert.alert("Erro", "Falha ao excluir item");
                         }
@@ -259,6 +234,7 @@ export default function EntradaMaterialScreen() {
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 <View style={styles.header}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                        <Ionicons name="arrow-back" size={24} color={PALETTE.verdePrimario} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Entrada de Material</Text>
                     <View style={styles.backButton} />
@@ -467,6 +443,7 @@ function StatBox({ label, value, unit, color }: any) {
     );
 }
 
+// ✅ COMPONENTE ATUALIZADO COM ÍCONES IDÊNTICOS AO DE LEIRAS
 function MaterialCard({ item, onEdit, onDelete }: { item: MaterialEntry, onEdit: () => void, onDelete: () => void }) {
     const isPiscinao = item.destino === 'piscinao';
     
@@ -486,12 +463,13 @@ function MaterialCard({ item, onEdit, onDelete }: { item: MaterialEntry, onEdit:
                     </View>
                 </View>
 
+                {/* ✅ BOTÕES DE AÇÃO PADRONIZADOS */}
                 <View style={styles.actionButtons}>
-                    <TouchableOpacity onPress={onEdit} style={styles.actionBtn}>
-                        <Ionicons name="pencil" size={20} color={PALETTE.verdePrimario} />
+                    <TouchableOpacity style={styles.iconButton} onPress={onEdit}>
+                        <Text style={{fontSize: 18}}>✏️</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={onDelete} style={styles.actionBtn}>
-                        <Ionicons name="trash-outline" size={20} color={PALETTE.erro} />
+                    <TouchableOpacity style={[styles.iconButton, {backgroundColor: '#FFEBEE'}]} onPress={onDelete}>
+                        <Text style={{fontSize: 18}}>🗑️</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -595,8 +573,17 @@ const styles = StyleSheet.create({
     materialCardTitle: { fontWeight: 'bold' },
     materialCardDate: { fontSize: 11, color: PALETTE.cinza },
     
+    // ✅ ESTILOS ATUALIZADOS PARA OS BOTÕES (IGUAIS AO DE LEIRAS)
     actionButtons: { flexDirection: 'row', gap: 10 },
-    actionBtn: { padding: 5 },
+    iconButton: { 
+        padding: 8, 
+        borderRadius: 8, 
+        backgroundColor: PALETTE.cinzaClaro2, 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        minWidth: 40, 
+        minHeight: 40 
+    },
 
     materialCardDetails: { flexDirection: 'row', gap: 15, marginTop: 5 },
     detailItem: { flex: 1 },
