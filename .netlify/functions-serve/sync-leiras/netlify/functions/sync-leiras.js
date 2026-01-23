@@ -12797,8 +12797,9 @@ var handler = async (event) => {
     const agora = (/* @__PURE__ */ new Date()).toISOString();
     const erros = [];
     for (const leira of leiras) {
-      let origemLeira = "MTR";
-      if (leira.tipoFormacao === "MANUAL") origemLeira = "PISCINAO";
+      let origemLeira = leira.tipoFormacao;
+      if (!origemLeira) origemLeira = "MTR";
+      if (origemLeira === "MANUAL") origemLeira = "PISCINAO";
       const payloadLeira = {
         id: leira.id,
         usuario_id: USUARIO_ID,
@@ -12809,6 +12810,7 @@ var handler = async (event) => {
         baga\u00E7o: leira.baga\u00E7o || 12,
         totalbioss\u00F3lido: leira.totalBioss\u00F3lido || 0,
         tipo_formacao: origemLeira,
+        // ✅ Agora salva o nome correto
         sincronizado: true,
         sincronizado_em: agora,
         criado_em: agora,

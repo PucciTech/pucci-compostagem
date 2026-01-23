@@ -9,7 +9,8 @@ import {
   ActivityIndicator,
   TextInput,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -53,7 +54,8 @@ interface Leira {
   bagaço: number;
   status: string;
   totalBiossólido: number;
-  tipoFormacao: 'MTR' | 'MANUAL';
+  tipoFormacao: string;
+  origemPiscinao?: string;
 }
 
 const parsePeso = (valor: string | number): number => {
@@ -126,8 +128,15 @@ export default function NovaLeiraScreen() {
   const [modoManual, setModoManual] = useState(false);
   const [pesoManualBio, setPesoManualBio] = useState('');
   const [pesoManualBagaco, setPesoManualBagaco] = useState('12');
-  // 🔥 NOVO CAMPO: DATA MANUAL (Inicia com hoje)
   const [dataManual, setDataManual] = useState(new Date().toLocaleDateString('pt-BR'));
+  
+  // Estados Seleção de Piscinão
+  const [piscinaoSelecionado, setPiscinaoSelecionado] = useState('Piscinão 1');
+  const [listaPiscinoes, setListaPiscinoes] = useState(['Piscinão 1', 'Piscinão 2', 'Piscinão 3', 'Piscinão 4']);
+  
+  // Modal Novo Piscinão
+  const [showModalNovoPiscinao, setShowModalNovoPiscinao] = useState(false);
+  const [novoPiscinaoText, setNovoPiscinaoText] = useState('');
 
   useFocusEffect(
     React.useCallback(() => {
@@ -138,6 +147,25 @@ export default function NovaLeiraScreen() {
   const loadData = async () => {
     try {
       setLoading(true);
+      
+      const destinosSalvos = await AsyncStorage.getItem('listaDestinos');
+      if (destinosSalvos) {
+        const todos = JSON.parse(destinosSalvos);
+        const soPiscinoes = todos.filter((d: string) => 
+          d.toLowerCase().includes('piscin') || d.toLowerCase().includes('tanque')
+        );
+        
+        if (soPiscinoes.length > 0) {
+          const padroes = ['Piscinão 1', 'Piscinão 2', 'Piscinão 3', 'Piscinão 4'];
+          const listaFinal = Array.from(new Set([...padroes, ...soPiscinoes]));
+          setListaPiscinoes(listaFinal);
+          
+          if (!listaFinal.includes(piscinaoSelecionado)) {
+             setPiscinaoSelecionado(listaFinal[0]);
+          }
+        }
+      }
+
       const materiaisRegistrados = await AsyncStorage.getItem('materiaisRegistrados');
       const materiais = materiaisRegistrados ? JSON.parse(materiaisRegistrados) : [];
       
@@ -172,6 +200,29 @@ export default function NovaLeiraScreen() {
     }
   };
 
+  const handleAddNovoPiscinao = async () => {
+    if (!novoPiscinaoText.trim()) { Alert.alert('Erro', 'Digite o nome do piscinão'); return; }
+    
+    const novaListaLocal = [...listaPiscinoes, novoPiscinaoText];
+    setListaPiscinoes(novaListaLocal);
+    setPiscinaoSelecionado(novoPiscinaoText);
+
+    try {
+        const destinosSalvos = await AsyncStorage.getItem('listaDestinos');
+        const listaGlobal = destinosSalvos ? JSON.parse(destinosSalvos) : ['Pátio', 'Piscinão 1', 'Piscinão 2', 'Piscinão 3', 'Piscinão 4', 'Estoque Bagaço'];
+        
+        if (!listaGlobal.includes(novoPiscinaoText)) {
+            const novaListaGlobal = [...listaGlobal, novoPiscinaoText];
+            await AsyncStorage.setItem('listaDestinos', JSON.stringify(novaListaGlobal));
+        }
+    } catch (e) {
+        console.error("Erro ao salvar destino global", e);
+    }
+    
+    setNovoPiscinaoText('');
+    setShowModalNovoPiscinao(false);
+  };
+
   const handleSelectBiossólido = (id: string) => {
     if (selectedBiossólidos.includes(id)) {
       setSelectedBiossólidos(selectedBiossólidos.filter((item) => item !== id));
@@ -187,29 +238,26 @@ export default function NovaLeiraScreen() {
   const handleFormarLeira = async () => {
     let novaLeira: Leira;
 
+    // 🔥 LÓGICA CRÍTICA DE SEPARAÇÃO 🔥
     if (modoManual) {
+      // === MODO MANUAL (PISCINÃO) ===
       const pesoBio = parsePeso(pesoManualBio);
       const pesoBagaco = parsePeso(pesoManualBagaco);
 
-      if (pesoBio <= 0) {
-        Alert.alert('Atenção', 'Informe o peso do Biossólido/Piscinão.');
-        return;
-      }
-      if (pesoBagaco <= 0) {
-        Alert.alert('Atenção', 'Informe o peso do Bagaço.');
-        return;
-      }
-      if (!dataManual.trim()) {
-        Alert.alert('Atenção', 'Informe a data de formação.');
-        return;
-      }
+      if (pesoBio <= 0) { Alert.alert('Atenção', 'Informe o peso do Biossólido/Piscinão.'); return; }
+      if (pesoBagaco <= 0) { Alert.alert('Atenção', 'Informe o peso do Bagaço.'); return; }
+      if (!dataManual.trim()) { Alert.alert('Atenção', 'Informe a data de formação.'); return; }
+
+      // Garante que o tipoFormacao seja EXATAMENTE o nome do piscinão
+      const tipoFormacaoReal = piscinaoSelecionado; 
 
       const itemManual: BiossólidoEntry = {
         id: `manual-${Date.now()}`,
-        data: dataManual, // Usa a data digitada
+        data: dataManual,
         numeroMTR: 'MANUAL',
         peso: pesoBio.toString(),
-        origem: 'Piscinão/Manual',
+        origem: 'Estoque Interno', 
+        destino: piscinaoSelecionado, 
         tipoMaterial: 'Biossólido'
       };
 
@@ -217,15 +265,18 @@ export default function NovaLeiraScreen() {
         id: Date.now().toString(),
         numeroLeira: leiras.length + 1,
         lote: calcularLote([]),
-        dataFormacao: dataManual, // Usa a data digitada
+        dataFormacao: dataManual,
         biossólidos: [itemManual],
         bagaço: pesoBagaco,
         status: 'formada',
         totalBiossólido: pesoBio,
-        tipoFormacao: 'MANUAL'
+        // 🔥 AQUI ESTÁ O SEGREDO: Passa a variável direta, sem chance de ser "MTR"
+        tipoFormacao: tipoFormacaoReal, 
+        origemPiscinao: tipoFormacaoReal
       };
 
     } else {
+      // === MODO MTR (PADRÃO) ===
       if (selectedBiossólidos.length < 3 || selectedBiossólidos.length > 4) {
         Alert.alert('Atenção', 'Selecione 3 ou 4 viagens para formar a leira.');
         return;
@@ -244,6 +295,7 @@ export default function NovaLeiraScreen() {
         bagaço: 12,
         status: 'formada',
         totalBiossólido: totalBiossólido,
+        // 🔥 AQUI É MTR
         tipoFormacao: 'MTR'
       };
     }
@@ -268,7 +320,6 @@ export default function NovaLeiraScreen() {
       setSelectedBiossólidos([]);
       setPesoManualBio('');
       setPesoManualBagaco('12');
-      // Reseta a data para hoje
       setDataManual(new Date().toLocaleDateString('pt-BR'));
       setShowForm(false);
 
@@ -307,7 +358,7 @@ export default function NovaLeiraScreen() {
       await AsyncStorage.setItem('leirasFormadas', JSON.stringify(novasLeiras));
       setLeiras(novasLeiras);
 
-      if (devolverAoEstoque && leira.tipoFormacao !== 'MANUAL') {
+      if (devolverAoEstoque && leira.tipoFormacao === 'MTR') {
         const materiaisRegistrados = await AsyncStorage.getItem('materiaisRegistrados');
         const materiais = materiaisRegistrados ? JSON.parse(materiaisRegistrados) : [];
         const novosMateriais = [...materiais, ...leira.biossólidos];
@@ -387,8 +438,36 @@ export default function NovaLeiraScreen() {
 
             {modoManual ? (
               <View style={styles.manualInputContainer}>
-                {/* 🔥 NOVO CAMPO DE DATA */}
-                <Text style={styles.inputLabel}>Data de Formação</Text>
+                
+                <View style={styles.labelHeader}>
+                    <Text style={styles.inputLabel}>Origem do Material</Text>
+                    <TouchableOpacity onPress={() => setShowModalNovoPiscinao(true)} style={styles.addBtnSmall}>
+                        <Text style={styles.addBtnSmallIcon}>+</Text>
+                    </TouchableOpacity>
+                </View>
+                
+                <View style={styles.piscinaoGrid}>
+                  {listaPiscinoes.map((piscinao) => (
+                    <TouchableOpacity
+                      key={piscinao}
+                      style={[
+                        styles.piscinaoBtn, 
+                        piscinaoSelecionado === piscinao && styles.piscinaoBtnActive
+                      ]}
+                      onPress={() => setPiscinaoSelecionado(piscinao)}
+                    >
+                      <Text style={styles.piscinaoIcon}>💧</Text>
+                      <Text style={[
+                        styles.piscinaoText, 
+                        piscinaoSelecionado === piscinao && styles.piscinaoTextActive
+                      ]}>
+                        {piscinao}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={[styles.inputLabel, {marginTop: 15}]}>Data de Formação</Text>
                 <View style={styles.inputWrapper}>
                   <TextInput
                     style={styles.input}
@@ -506,6 +585,32 @@ export default function NovaLeiraScreen() {
         </View>
       </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal visible={showModalNovoPiscinao} transparent animationType="fade" onRequestClose={() => setShowModalNovoPiscinao(false)}>
+        <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Novo Piscinão</Text>
+                <View style={styles.modalInputBox}>
+                    <TextInput
+                        style={styles.modalInput}
+                        placeholder="Ex: Piscinão 5, Tanque Extra..."
+                        value={novoPiscinaoText}
+                        onChangeText={setNovoPiscinaoText}
+                        autoFocus
+                    />
+                </View>
+                <View style={styles.modalButtons}>
+                    <TouchableOpacity style={styles.modalBtnCancelar} onPress={() => setShowModalNovoPiscinao(false)}>
+                        <Text style={styles.modalBtnCancelarText}>Cancelar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.modalBtnConfirmar} onPress={handleAddNovoPiscinao}>
+                        <Text style={styles.modalBtnConfirmarText}>Adicionar</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -529,10 +634,11 @@ function LeiraCard({ leira, onDelete }: { leira: Leira, onDelete: () => void }) 
         <View>
           <View style={styles.leiraNumberRow}>
             <Text style={styles.leiraNumber}>Leira #{leira.numeroLeira}</Text>
-            {leira.tipoFormacao === 'MANUAL' ? (
-              // 🔥 ALTERADO: AGORA MOSTRA "PISCINÃO" EM VEZ DE "MANUAL"
+            {leira.tipoFormacao !== 'MTR' ? (
               <View style={[styles.loteBadge, { backgroundColor: PALETTE.azulPiscinao }]}>
-                <Text style={styles.loteBadgeText}>PISCINÃO</Text>
+                <Text style={styles.loteBadgeText}>
+                  {leira.tipoFormacao}
+                </Text>
               </View>
             ) : (
               <View style={[styles.loteBadge, { backgroundColor: PALETTE.terracota }]}>
@@ -565,7 +671,7 @@ function LeiraCard({ leira, onDelete }: { leira: Leira, onDelete: () => void }) 
       </View>
 
       <View style={styles.leiraDetails}>
-        <DetailItem label="Origem" value={leira.tipoFormacao === 'MANUAL' ? 'Piscinão/Manual' : 'Estoque (MTR)'} />
+        <DetailItem label="Origem" value={leira.tipoFormacao !== 'MTR' ? leira.tipoFormacao : 'Estoque (MTR)'} />
         <DetailItem label="Peso Bio" value={`${leira.totalBiossólido.toFixed(1)} ton`} />
         <DetailItem label="Bagaço" value={`${leira.bagaço} ton`} />
       </View>
@@ -637,6 +743,11 @@ const styles = StyleSheet.create({
   modeBtnTextActive: { color: PALETTE.verdePrimario, fontWeight: '700' },
 
   manualInputContainer: { marginBottom: 20 },
+  
+  labelHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8, alignItems: 'center' },
+  addBtnSmall: { backgroundColor: PALETTE.terracota, width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  addBtnSmallIcon: { color: PALETTE.branco, fontWeight: 'bold' },
+
   inputLabel: { fontSize: 12, fontWeight: '700', color: PALETTE.cinza, marginBottom: 6 },
   inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: PALETTE.cinzaClaro2, borderRadius: 8, paddingHorizontal: 12, marginBottom: 14 },
   input: { flex: 1, paddingVertical: 12, fontSize: 16, fontWeight: '700', color: PALETTE.preto },
@@ -693,4 +804,36 @@ const styles = StyleSheet.create({
   timelineContent: { marginLeft: 12 },
   timelineLabel: { fontSize: 12, fontWeight: '600', color: PALETTE.preto },
   timelineDias: { fontSize: 10, color: PALETTE.cinza, marginTop: 2 },
+
+  // 🔥 ESTILOS DO SELETOR DE PISCINÃO
+  piscinaoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  piscinaoBtn: { 
+    flex: 1, 
+    minWidth: '45%', 
+    backgroundColor: PALETTE.cinzaClaro2, 
+    padding: 12, 
+    borderRadius: 8, 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: 'transparent' 
+  },
+  piscinaoBtnActive: { 
+    backgroundColor: PALETTE.azulPiscinao + '15', 
+    borderColor: PALETTE.azulPiscinao 
+  },
+  piscinaoIcon: { fontSize: 20, marginBottom: 4 },
+  piscinaoText: { fontSize: 12, color: PALETTE.cinza, fontWeight: '600' },
+  piscinaoTextActive: { color: PALETTE.azulPiscinao, fontWeight: 'bold' },
+
+  // 🔥 ESTILOS DO MODAL
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: PALETTE.branco, borderRadius: 16, padding: 20 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
+  modalInputBox: { backgroundColor: PALETTE.cinzaClaro2, borderRadius: 10, padding: 12, marginBottom: 20 },
+  modalInput: { fontSize: 16 },
+  modalButtons: { flexDirection: 'row', gap: 10 },
+  modalBtnCancelar: { flex: 1, padding: 12, backgroundColor: PALETTE.cinzaClaro2, borderRadius: 10, alignItems: 'center' },
+  modalBtnCancelarText: { fontWeight: 'bold', color: PALETTE.cinza },
+  modalBtnConfirmar: { flex: 1, padding: 12, backgroundColor: PALETTE.verdePrimario, borderRadius: 10, alignItems: 'center' },
+  modalBtnConfirmarText: { fontWeight: 'bold', color: PALETTE.branco },
 });

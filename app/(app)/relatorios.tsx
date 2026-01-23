@@ -11,9 +11,10 @@ import {
   ActivityIndicator,
   FlatList,
   TextInput,
-  Modal
+  Modal,
+  Platform // Importante para detectar o sistema
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'; // Importante para áreas seguras
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -53,7 +54,7 @@ interface Leira {
   status: string;
   totalBiossólido: number;
   temperature?: number;
-  enriquecimentos?: EnriquecimentoLeira[];
+  enriquecimentos?: any[];
 }
 
 interface MonitoramentoLeira {
@@ -61,29 +62,10 @@ interface MonitoramentoLeira {
   leiraId: string;
   data: string;
   hora?: string;
-  temperaturas: PontoTemperatura[];
+  temperaturas: any[];
   revolveu: boolean;
   observacoes?: string;
   statusNovo?: string;
-  timestamp: number;
-}
-
-interface PontoTemperatura {
-  ponto: 'topo' | 'meio' | 'fundo';
-  temperatura: number;
-}
-
-interface EnriquecimentoLeira {
-  id: string;
-  leiraId: string;
-  dataEnriquecimento: string;
-  horaEnriquecimento?: string;
-  pesoAdicionado: number;
-  numeroMTR?: string;
-  origem?: string;
-  observacoes?: string;
-  pesoAnterior: number;
-  pesoNovo: number;
   timestamp: number;
 }
 
@@ -149,6 +131,7 @@ const verificarNecessidadeRevolvimento = (monitoramentos: MonitoramentoLeira[]):
 
 export default function RelatoriosScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets(); // Hook para pegar o tamanho da área segura
   const [leiras, setLeiras] = useState<Leira[]>([]);
   const [monitoramentos, setMonitoramentos] = useState<MonitoramentoLeira[]>([]);
   const [loading, setLoading] = useState(true);
@@ -191,22 +174,18 @@ export default function RelatoriosScreen() {
   const leirasFiltradasCompletas = React.useMemo(() => {
     let resultado = [...leiras];
 
-    // 1. Filtro por Status
     if (filtroStatus !== 'todas') {
       resultado = resultado.filter((leira) => leira.status === filtroStatus);
     }
 
-    // 2. Filtro por Lote (NOVO)
     if (filtroLote) {
       resultado = resultado.filter((leira) => leira.lote === filtroLote);
     }
 
-    // 3. Filtro por Leira (NOVO)
     if (filtroLeira) {
       resultado = resultado.filter((leira) => leira.numeroLeira.toString() === filtroLeira);
     }
 
-    // 4. Filtro por Busca Textual
     if (filtroBusca.trim()) {
       const textoBusca = filtroBusca.toLowerCase().trim();
       resultado = resultado.filter((leira) => {
@@ -237,7 +216,6 @@ export default function RelatoriosScreen() {
     return dataB.getTime() - dataA.getTime();
   });
 
-  // Listas únicas para os modais
   const lotesUnicos = Array.from(new Set(leiras.map(l => l.lote))).sort();
   const leirasUnicas = leiras
       .filter(l => !filtroLote || l.lote === filtroLote)
@@ -267,7 +245,6 @@ export default function RelatoriosScreen() {
     setMostrarBusca(false);
   };
 
-  // ===== ESTATÍSTICAS =====
   const totalLeiras = leiras.length;
   const leirasFormadas = leiras.filter((l) => l.status === 'formada').length;
   const leirasSecando = leiras.filter((l) => l.status === 'secando').length;
@@ -289,7 +266,6 @@ export default function RelatoriosScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* ===== HEADER ===== */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           </TouchableOpacity>
@@ -299,7 +275,6 @@ export default function RelatoriosScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ===== BARRA DE FILTROS (NOVO) ===== */}
         <View style={styles.filterContainer}>
             <Text style={styles.filterLabel}>Filtragem Rápida:</Text>
             <View style={styles.filterRow}>
@@ -331,7 +306,6 @@ export default function RelatoriosScreen() {
             )}
         </View>
 
-        {/* ===== STATS GERAIS ===== */}
         <View style={styles.statsGeraisBox}>
           <Text style={styles.statsGeraisTitle}>📊 Estatísticas Gerais</Text>
           <View style={styles.statsGeraisContent}>
@@ -340,7 +314,6 @@ export default function RelatoriosScreen() {
           </View>
         </View>
 
-        {/* ===== STATS POR STATUS ===== */}
         <View style={styles.statsStatusContainer}>
           <Text style={styles.statsStatusTitle}>📈 Por Status</Text>
           <View style={styles.statsStatusGrid}>
@@ -352,7 +325,6 @@ export default function RelatoriosScreen() {
           </View>
         </View>
 
-        {/* ===== FILTROS AVANÇADOS ===== */}
         <View style={styles.filtrosContainer}>
           <View style={styles.filtrosHeaderContainer}>
             <Text style={styles.filtrosTitle}>Busca Textual</Text>
@@ -395,7 +367,6 @@ export default function RelatoriosScreen() {
           )}
         </View>
 
-        {/* ===== LISTA DE LEIRAS ===== */}
         <View style={styles.listSection}>
           <View style={styles.listHeader}>
             <Text style={styles.listTitle}>Leiras ({leirasOrdenadas.length})</Text>
@@ -427,10 +398,11 @@ export default function RelatoriosScreen() {
         </View>
       </ScrollView>
 
-      {/* MODAL DE FILTRO */}
+      {/* ✅ MODAL DE FILTRO CORRIGIDO */}
       <Modal visible={showModalFiltro} transparent animationType="slide" onRequestClose={() => setShowModalFiltro(false)}>
           <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
+              {/* Adicionamos paddingBottom seguro para não colar na barra do celular */}
+              <View style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}>
                   <View style={styles.modalHeader}>
                       <Text style={styles.modalTitle}>Selecione {tipoFiltro === 'lote' ? 'o Lote' : 'a Leira'}</Text>
                       <TouchableOpacity onPress={() => setShowModalFiltro(false)}>
@@ -438,18 +410,23 @@ export default function RelatoriosScreen() {
                       </TouchableOpacity>
                   </View>
                   
-                  <FlatList
-                      data={tipoFiltro === 'lote' ? lotesUnicos : leirasUnicas}
-                      keyExtractor={(item) => item}
-                      renderItem={({ item }) => (
-                          <TouchableOpacity style={styles.modalItem} onPress={() => selecionarFiltro(item)}>
-                              <Text style={styles.modalItemText}>
-                                  {tipoFiltro === 'lote' ? `Lote ${item}` : `Leira #${item}`}
-                              </Text>
-                              <Ionicons name="chevron-forward" size={20} color={PALETTE.cinzaClaro} />
-                          </TouchableOpacity>
-                      )}
-                  />
+                  {/* Lista com altura máxima para não estourar a tela */}
+                  <View style={{ maxHeight: '80%' }}>
+                    <FlatList
+                        data={tipoFiltro === 'lote' ? lotesUnicos : leirasUnicas}
+                        keyExtractor={(item) => item}
+                        // Adiciona padding no final da lista interna também
+                        contentContainerStyle={{ paddingBottom: 20 }}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity style={styles.modalItem} onPress={() => selecionarFiltro(item)}>
+                                <Text style={styles.modalItemText}>
+                                    {tipoFiltro === 'lote' ? `Lote ${item}` : `Leira #${item}`}
+                                </Text>
+                                <Ionicons name="chevron-forward" size={20} color={PALETTE.cinzaClaro} />
+                            </TouchableOpacity>
+                        )}
+                    />
+                  </View>
               </View>
           </View>
       </Modal>
@@ -457,7 +434,6 @@ export default function RelatoriosScreen() {
   );
 }
 
-// ===== COMPONENTES AUXILIARES =====
 function StatBoxStatus({ label, value, icon, color, status, onPress }: any) {
   return (
     <TouchableOpacity style={[styles.statBoxStatus, { borderTopColor: color }]} onPress={onPress}>
@@ -547,7 +523,6 @@ const styles = StyleSheet.create({
   refreshButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   refreshIcon: { fontSize: 20 },
   
-  // FILTROS NOVOS
   filterContainer: { backgroundColor: PALETTE.branco, padding: 15, marginHorizontal: 20, marginTop: 15, borderRadius: 12, borderWidth: 1, borderColor: PALETTE.cinzaClaro2 },
   filterLabel: { fontSize: 11, fontWeight: '700', color: PALETTE.cinza, marginBottom: 8, textTransform: 'uppercase' },
   filterRow: { flexDirection: 'row', gap: 10 },
@@ -624,9 +599,15 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, fontWeight: '700', color: PALETTE.preto, marginBottom: 6 },
   emptySubtext: { fontSize: 12, color: PALETTE.cinza },
 
-  // MODAL
+  // 🔥 ESTILOS DO MODAL CORRIGIDOS
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: PALETTE.branco, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '70%' },
+  modalContent: { 
+    backgroundColor: PALETTE.branco, 
+    borderTopLeftRadius: 20, 
+    borderTopRightRadius: 20, 
+    padding: 20, 
+    maxHeight: '70%' 
+  },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   modalTitle: { fontSize: 18, fontWeight: '700', color: PALETTE.preto },
   modalItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro2, flexDirection: 'row', justifyContent: 'space-between' },

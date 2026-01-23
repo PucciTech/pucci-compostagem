@@ -31,9 +31,17 @@ export const handler: Handler = async (event) => {
     const erros = [];
 
     for (const leira of leiras) {
-      // 1. Define a origem (MTR ou PISCINAO)
-      let origemLeira = 'MTR';
-      if (leira.tipoFormacao === 'MANUAL') origemLeira = 'PISCINAO';
+      // ============================================================
+      // 1. CORREÇÃO DA ORIGEM (MTR ou NOME DO PISCINÃO)
+      // ============================================================
+      let origemLeira = leira.tipoFormacao;
+
+      // Se vier vazio ou nulo, assume MTR
+      if (!origemLeira) origemLeira = 'MTR';
+
+      // Se vier a palavra genérica "MANUAL", converte para "PISCINAO" (compatibilidade)
+      // Se vier "Piscinão 1", "Piscinão 2", ele MANTÉM o nome original!
+      if (origemLeira === 'MANUAL') origemLeira = 'PISCINAO';
 
       // 2. Monta o objeto da LEIRA
       const payloadLeira = {
@@ -45,7 +53,7 @@ export const handler: Handler = async (event) => {
         status: leira.status,
         bagaço: leira.bagaço || 12,
         totalbiossólido: leira.totalBiossólido || 0,
-        tipo_formacao: origemLeira,
+        tipo_formacao: origemLeira, // ✅ Agora salva o nome correto
         sincronizado: true,
         sincronizado_em: agora,
         criado_em: agora,

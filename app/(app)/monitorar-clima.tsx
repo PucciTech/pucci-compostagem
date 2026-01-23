@@ -9,9 +9,10 @@ import {
     TextInput as RNTextInput,
     ActivityIndicator,
     Modal,
-    FlatList
+    FlatList,
+    Platform
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'; // 🔥 IMPORTANTE
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Button } from '@/components/Button';
@@ -51,12 +52,13 @@ interface Leira {
     id: string;
     nome: string;
     numeroLeira: number;
-    lote: string; // Adicionado campo lote
+    lote: string;
     status: string;
 }
 
 export default function MonitorarClimaScreen() {
     const router = useRouter();
+    const insets = useSafeAreaInsets(); // 🔥 HOOK PARA ÁREA SEGURA
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     
@@ -101,7 +103,7 @@ export default function MonitorarClimaScreen() {
                         id: l.id,
                         nome: `Leira #${l.numeroLeira}`,
                         numeroLeira: l.numeroLeira,
-                        lote: l.lote || 'S/L', // Garante que tenha lote
+                        lote: l.lote || 'S/L',
                         status: l.status
                     }));
                 
@@ -126,25 +128,16 @@ export default function MonitorarClimaScreen() {
 
     // ===== LÓGICA DE FILTRAGEM =====
     const registrosFiltrados = registros.filter(reg => {
-        // Encontra a leira associada a este registro
         const leiraAssociada = leiras.find(l => l.id === reg.leiraId);
-        
-        // Se a leira foi excluída mas o registro existe, mostramos se não houver filtro
         if (!leiraAssociada) return !filtroLote && !filtroLeira;
-
-        // Filtro de Lote
         if (filtroLote && leiraAssociada.lote !== filtroLote) return false;
-
-        // Filtro de Leira (Número)
         if (filtroLeira && leiraAssociada.numeroLeira.toString() !== filtroLeira) return false;
-
         return true;
     });
 
-    // Listas únicas para os modais de filtro
     const lotesUnicos = Array.from(new Set(leiras.map(l => l.lote))).sort();
     const leirasUnicas = leiras
-        .filter(l => !filtroLote || l.lote === filtroLote) // Se tem lote selecionado, mostra só leiras dele
+        .filter(l => !filtroLote || l.lote === filtroLote)
         .map(l => l.numeroLeira.toString())
         .sort((a, b) => Number(a) - Number(b));
 
@@ -156,7 +149,7 @@ export default function MonitorarClimaScreen() {
     const selecionarFiltro = (valor: string) => {
         if (tipoFiltro === 'lote') {
             setFiltroLote(valor);
-            setFiltroLeira(''); // Reseta leira ao mudar lote
+            setFiltroLeira('');
         } else {
             setFiltroLeira(valor);
         }
@@ -194,7 +187,7 @@ export default function MonitorarClimaScreen() {
                 id: `${Date.now()}-${leiraId}`,
                 leiraId,
                 data: formData.data,
-                precipitacao: parseFloat(formData.precipitacao),
+                precipitacao: parseFloat(formData.precipitacao.replace(',', '.')),
                 umidade: formData.umidade || undefined,
                 observacao: formData.observacao || undefined,
                 timestamp
@@ -253,7 +246,7 @@ export default function MonitorarClimaScreen() {
                     <View style={styles.backButton} />
                 </View>
 
-                {/* ===== BARRA DE FILTROS (NOVO) ===== */}
+                {/* ===== BARRA DE FILTROS ===== */}
                 <View style={styles.filterContainer}>
                     <Text style={styles.filterLabel}>Filtrar Registros:</Text>
                     <View style={styles.filterRow}>
@@ -477,10 +470,10 @@ export default function MonitorarClimaScreen() {
                 </View>
             </ScrollView>
 
-            {/* MODAL DE FILTRO */}
+            {/* 🔥 MODAL DE FILTRO COM CORREÇÃO DE ÁREA SEGURA */}
             <Modal visible={showModalFiltro} transparent animationType="slide" onRequestClose={() => setShowModalFiltro(false)}>
                 <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
+                    <View style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Selecione {tipoFiltro === 'lote' ? 'o Lote' : 'a Leira'}</Text>
                             <TouchableOpacity onPress={() => setShowModalFiltro(false)}>
@@ -488,18 +481,21 @@ export default function MonitorarClimaScreen() {
                             </TouchableOpacity>
                         </View>
                         
-                        <FlatList
-                            data={tipoFiltro === 'lote' ? lotesUnicos : leirasUnicas}
-                            keyExtractor={(item) => item}
-                            renderItem={({ item }) => (
-                                <TouchableOpacity style={styles.modalItem} onPress={() => selecionarFiltro(item)}>
-                                    <Text style={styles.modalItemText}>
-                                        {tipoFiltro === 'lote' ? `Lote ${item}` : `Leira #${item}`}
-                                    </Text>
-                                    <Ionicons name="chevron-forward" size={20} color={PALETTE.cinzaClaro} />
-                                </TouchableOpacity>
-                            )}
-                        />
+                        <View style={{ maxHeight: '80%' }}>
+                            <FlatList
+                                data={tipoFiltro === 'lote' ? lotesUnicos : leirasUnicas}
+                                keyExtractor={(item) => item}
+                                contentContainerStyle={{ paddingBottom: 20 }}
+                                renderItem={({ item }) => (
+                                    <TouchableOpacity style={styles.modalItem} onPress={() => selecionarFiltro(item)}>
+                                        <Text style={styles.modalItemText}>
+                                            {tipoFiltro === 'lote' ? `Lote ${item}` : `Leira #${item}`}
+                                        </Text>
+                                        <Ionicons name="chevron-forward" size={20} color={PALETTE.cinzaClaro} />
+                                    </TouchableOpacity>
+                                )}
+                            />
+                        </View>
                     </View>
                 </View>
             </Modal>
@@ -581,9 +577,15 @@ const styles = StyleSheet.create({
     emptyText: { fontSize: 14, fontWeight: '700', color: PALETTE.preto, marginBottom: 6 },
     emptySubtext: { fontSize: 12, color: PALETTE.cinza },
 
-    // MODAL
+    // 🔥 MODAL CORRIGIDO
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-    modalContent: { backgroundColor: PALETTE.branco, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '70%' },
+    modalContent: { 
+        backgroundColor: PALETTE.branco, 
+        borderTopLeftRadius: 20, 
+        borderTopRightRadius: 20, 
+        padding: 20, 
+        maxHeight: '70%' // Limita a altura para não estourar
+    },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
     modalTitle: { fontSize: 18, fontWeight: '700', color: PALETTE.preto },
     modalItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro2, flexDirection: 'row', justifyContent: 'space-between' },
