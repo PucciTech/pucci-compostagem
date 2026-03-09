@@ -35,13 +35,14 @@ export const syncService = {
       if (result.sucesso && result.dados) {
         
         // 1. MATERIAIS
-        if (result.dados.materiais.length > 0) {
+                // 1. MATERIAIS
+        if (result.dados.materiais?.length > 0) {
           const materiaisFormatados = result.dados.materiais.map((m: any) => ({
             id: m.id,
             data: m.data,
-            tipoMaterial: m.tipo_material || m.tipoMaterial,
-            numeroMTR: m.numero_mtr || m.numeroMTR || '',
-            peso: String(m.peso), // App usa string
+            tipoMaterial: m.tipomaterial, // Nome exato do banco
+            numeroMTR: m.numeromtr || '', // Nome exato do banco
+            peso: String(m.peso),
             origem: m.origem
           }));
           await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(materiaisFormatados));
