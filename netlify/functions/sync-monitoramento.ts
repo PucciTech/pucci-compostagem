@@ -6,7 +6,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhwY3h1b25xZmZld3RzbXdsYXRvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDkzNDU3MywiZXhwIjoyMDgwNTEwNTczfQ.CV9ccsDAX4ZJzFOG79GhE4aP-6CRTz64_Uwz0nHPCtE"
 );
 
-// ✅ ACEITA STRING OU NUMBER AGORA (Para lidar com "45,5")
 interface PontoTemperatura {
   ponto: string;
   temperatura: number | string; 
@@ -21,30 +20,23 @@ interface MonitoramentoLeira {
   revolveu: boolean;
   observacoes?: string;
   statusNovo?: string;
-  localDeposito?: string; // ✅ ADICIONADO AQUI
+  localDeposito?: string;
   volumeOriginal?: number;
   volumeFinal?: number;
-  quebraVolume?: number;
-  percentualQuebra?: number;
   diasDesdeFormacao?: number;
   timestamp: number;
 }
 
 const USUARIO_ID = '116609f9-53c2-4289-9a63-0174fad8148e';
 
-// 🔥 NOVA FUNÇÃO: Converte "45,5" ou "45.5" para número real
 function safeParseFloat(valor: any): number | null {
   if (valor === null || valor === undefined || valor === '') return null;
-  
   if (typeof valor === 'number') return valor;
-  
   if (typeof valor === 'string') {
-    // Troca vírgula por ponto e converte
     const valorLimpo = valor.replace(',', '.').trim();
     const numero = parseFloat(valorLimpo);
     return isNaN(numero) ? null : numero;
   }
-  
   return null;
 }
 
@@ -55,7 +47,6 @@ function extrairTemperaturas(temperaturas: PontoTemperatura[]) {
 
   if (temperaturas && temperaturas.length > 0) {
     for (const pontoTemp of temperaturas) {
-      // ✅ Usa a função segura aqui
       if (pontoTemp.ponto === 'topo') topo = safeParseFloat(pontoTemp.temperatura);
       if (pontoTemp.ponto === 'meio') meio = safeParseFloat(pontoTemp.temperatura);
       if (pontoTemp.ponto === 'fundo') fundo = safeParseFloat(pontoTemp.temperatura);
@@ -109,23 +100,16 @@ export const handler: Handler = async (event) => {
             leiraid: monitoramento.leiraId,
             data: monitoramento.data,
             hora: monitoramento.hora || null,
-            
-            // ✅ Agora envia números decimais (float)
             temperatura_topo: topo,
             temperatura_meio: meio,
             temperatura_fundo: fundo,
-            
             revolveu: monitoramento.revolveu,
             observacoes: monitoramento.observacoes || null,
             status: monitoramento.statusNovo || null,
-            
-            // ✅ ADICIONADO AQUI: Envia o local de depósito para o Supabase
             local_deposito: monitoramento.localDeposito || null,
-            
             volume_original: monitoramento.volumeOriginal || null,
             volume_final: monitoramento.volumeFinal || null,
-            quebra_volume: monitoramento.quebraVolume || null,
-            percentual_quebra: monitoramento.percentualQuebra || null,
+        
             dias_desde_formacao: monitoramento.diasDesdeFormacao || null,
             sincronizado: true,
             sincronizado_em: agora,
