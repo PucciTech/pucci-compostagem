@@ -12848,6 +12848,8 @@ var handler = async (event) => {
           revolveu: monitoramento.revolveu,
           observacoes: monitoramento.observacoes || null,
           status: monitoramento.statusNovo || null,
+          // ✅ ADICIONADO AQUI: Envia o local de depósito para o Supabase
+          local_deposito: monitoramento.localDeposito || null,
           volume_original: monitoramento.volumeOriginal || null,
           volume_final: monitoramento.volumeFinal || null,
           quebra_volume: monitoramento.quebraVolume || null,

@@ -71,10 +71,10 @@ interface MonitoramentoLeira {
   revolveu: boolean;
   observacoes?: string;
   statusNovo?: string;
+  localDeposito?: string;
   volumeOriginal?: number;
   volumeFinal?: number;
-  quebraVolume?: number;
-  percentualQuebra?: number;
+
   diasDesdeFormacao?: number;
   timestamp: number;
 }
@@ -295,6 +295,7 @@ export default function DetalhesLeiraScreen() {
     observacoes: '',
     volumeOriginal: '',
     volumeFinal: '',
+    localDeposito: '', 
   });
 
   // ← FORM STATE ENRIQUECIMENTO
@@ -505,6 +506,9 @@ export default function DetalhesLeiraScreen() {
   };
 
 
+  
+  // ===== REGISTRAR MONITORAMENTO =====
+  
   // ===== REGISTRAR MONITORAMENTO =====
   const handleRegistrarMonitoramento = async () => {
     console.log('💾 ===== REGISTRANDO MONITORAMENTO =====');
@@ -557,732 +561,745 @@ export default function DetalhesLeiraScreen() {
       return;
     }
 
-    let quebraVolume = 0;
-    let percentualQuebra = 0;
-
-    if (formData.statusNovo === 'pronta' && formData.volumeFinal) {
-      const volOriginal = parseFloat(formData.volumeOriginal);
-      const volFinal = parseFloat(formData.volumeFinal);
-
-      if (!isNaN(volOriginal) && !isNaN(volFinal)) {
-        quebraVolume = volOriginal - volFinal;
-        percentualQuebra = (quebraVolume / volOriginal) * 100;
-
-        if (quebraVolume < 0) {
-          Alert.alert('Erro', 'Volume final não pode ser maior que volume original');
-          return;
-        }
-
-        if (percentualQuebra > 50) {
-          Alert.alert(
-            'Aviso',
-            `Quebra muito alta: ${percentualQuebra.toFixed(1)}%\n\nDeseja continuar?`,
-            [
-              { text: 'Cancelar', style: 'cancel' },
-              {
-                text: 'Continuar',
-                onPress: () => {
-                  salvarMonitoramento();
-                },
-              },
-            ]
-          );
-          return;
-        }
-      }
+    // ✅ VALIDAÇÃO: LOCAL DE DEPÓSITO
+    if (formData.statusNovo === 'pronta' && !formData.localDeposito) {
+      Alert.alert('Erro', 'Selecione o local de depósito para a leira pronta.');
+      return;
     }
 
-    salvarMonitoramento();
-
-    async function salvarMonitoramento() {
-      let diasDesdeFormacao = 0;
-
-      if (formData.statusNovo === 'pronta' && leira) {
-        try {
-          const [diaForm, mêsForm, anoForm] = leira.dataFormacao.split('/').map(Number);
-          const dataFormacao = new Date(anoForm, mêsForm - 1, diaForm);
-
-          const [diaAtual, mêsAtual, anoAtual] = formData.data.split('/').map(Number);
-          const dataAtual = new Date(anoAtual, mêsAtual - 1, diaAtual);
-
-          const diferença = dataAtual.getTime() - dataFormacao.getTime();
-          diasDesdeFormacao = Math.floor(diferença / (1000 * 60 * 60 * 24));
-
-          console.log(`📅 Dias desde formação: ${diasDesdeFormacao}`);
-        } catch (error) {
-          console.error('❌ Erro ao calcular dias:', error);
-        }
-      }
-
-      const novoMonitoramento: MonitoramentoLeira = {
-        id: Date.now().toString(),
-        leiraId: leiraId as string,
-        data: formData.data,
-        hora: new Date().toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-        temperaturas: temperaturas,
-        revolveu: formData.revolveu,
-        observacoes: formData.observacoes,
-        statusNovo: formData.statusNovo,
-        volumeOriginal: formData.volumeOriginal ? parseFloat(formData.volumeOriginal) : undefined,
-        volumeFinal: formData.volumeFinal ? parseFloat(formData.volumeFinal) : undefined,
-        quebraVolume: quebraVolume > 0 ? quebraVolume : undefined,
-        percentualQuebra: percentualQuebra > 0 ? percentualQuebra : undefined,
-        diasDesdeFormacao: diasDesdeFormacao > 0 ? diasDesdeFormacao : undefined,
-        timestamp: Date.now(),
-      };
-
-      console.log('🌡️ Novo monitoramento criado:', novoMonitoramento);
-
-      try {
-        const monitoramentosRegistrados = await AsyncStorage.getItem('leirasMonitoramento');
-        const monitoramentosData = monitoramentosRegistrados
-          ? JSON.parse(monitoramentosRegistrados)
-          : [];
-
-        monitoramentosData.push(novoMonitoramento);
-
-        await AsyncStorage.setItem('leirasMonitoramento', JSON.stringify(monitoramentosData));
-
-        console.log('✅ Monitoramento salvo em AsyncStorage');
-
-        // ===== ADICIONAR À FILA DE SINCRONIZAÇÃO =====
-        await syncService.adicionarFila('monitoramento', novoMonitoramento);
-        console.log('📤 Monitoramento adicionado à fila de sincronização');
-
-        let leiraAtualizada = leira;
-
-        if (leira && formData.statusNovo !== leira.status) {
-          console.log('🔄 Atualizando status da leira...');
-
-          const leirasRegistradas = await AsyncStorage.getItem('leirasFormadas');
-          const leirasData = leirasRegistradas ? JSON.parse(leirasRegistradas) : [];
-
-          const leiraIndex = leirasData.findIndex((l: Leira) => l.id === leiraId);
-
-          if (leiraIndex !== -1) {
-            leirasData[leiraIndex].status = formData.statusNovo;
-
-            await AsyncStorage.setItem('leirasFormadas', JSON.stringify(leirasData));
-
-            console.log('✅ Status da leira atualizado para:', formData.statusNovo);
-
-            leiraAtualizada = { ...leirasData[leiraIndex] };
-            setLeira(leiraAtualizada);
-
-            // ===== SINCRONIZAR LEIRA ATUALIZADA =====
-            await syncService.adicionarFila('leira', leiraAtualizada);
-            console.log('📤 Leira atualizada adicionada à fila de sincronização');
-          }
-        }
-
-        const monitoramentosAtualizados = [novoMonitoramento, ...monitoramentos];
-        setMonitoramentos(monitoramentosAtualizados);
-
-        if (temperaturas.length > 0) {
-          const alertaAtual = verificarAlertaTemperatura(monitoramentosAtualizados);
-          setAlerta(alertaAtual);
-        } else {
-          setAlerta({
-            ativo: false,
-            dias: 0,
-            temperatura: 0,
-            mensagem: '',
-            tempMedia1: 0,
-            tempMedia2: 0,
-            data1: '',
-            data2: '',
-          });
-        }
-
-        setFormData({
-          data: new Date().toLocaleDateString('pt-BR'),
-          topoTemp: '',
-          meioTemp: '',
-          fundoTemp: '',
-          revolveu: false,
-          statusNovo: formData.statusNovo,
-          observacoes: '',
-          volumeOriginal: formData.volumeOriginal,
-          volumeFinal: '',
-        });
-
-        setShowForm(false);
-
-        Alert.alert(
-          'Sucesso! ✅',
-          'Monitoramento registrado!\n\nOs dados serão sincronizados com o servidor quando você conectar à internet.'
-        );
-
-        console.log('✅ ===== MONITORAMENTO REGISTRADO COM SUCESSO =====');
-      } catch (error) {
-        console.error('❌ Erro ao salvar monitoramento:', error);
-        Alert.alert('Erro', 'Não foi possível registrar o monitoramento');
-      }
-    }
+    // Passamos apenas as temperaturas!
+    salvarMonitoramento(temperaturas); 
   };
+
+
+  // 👇 DEIXE APENAS ESTA FUNÇÃO AQUI 👇
+  async function salvarMonitoramento(temperaturas: PontoTemperatura[]) {
+    let diasDesdeFormacao = 0;
+
+    if (formData.statusNovo === 'pronta' && leira) {
+      try {
+        const [diaForm, mêsForm, anoForm] = leira.dataFormacao.split('/').map(Number);
+        const dataFormacao = new Date(anoForm, mêsForm - 1, diaForm);
+
+        const [diaAtual, mêsAtual, anoAtual] = formData.data.split('/').map(Number);
+        const dataAtual = new Date(anoAtual, mêsAtual - 1, diaAtual);
+
+        const diferença = dataAtual.getTime() - dataFormacao.getTime();
+        diasDesdeFormacao = Math.floor(diferença / (1000 * 60 * 60 * 24));
+
+        console.log(`📅 Dias desde formação: ${diasDesdeFormacao}`);
+      } catch (error) {
+        console.error('❌ Erro ao calcular dias:', error);
+      }
+    }
+
+    const novoMonitoramento: MonitoramentoLeira = {
+      id: Date.now().toString(),
+      leiraId: leiraId as string,
+      data: formData.data,
+      hora: new Date().toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      temperaturas: temperaturas,
+      revolveu: formData.revolveu,
+      observacoes: formData.observacoes,
+      statusNovo: formData.statusNovo,
+      localDeposito: formData.statusNovo === 'pronta' ? formData.localDeposito : undefined, 
+      volumeOriginal: formData.volumeOriginal ? parseFloat(formData.volumeOriginal) : undefined,
+      volumeFinal: formData.volumeFinal ? parseFloat(formData.volumeFinal) : undefined,
+      diasDesdeFormacao: diasDesdeFormacao > 0 ? diasDesdeFormacao : undefined,
+      timestamp: Date.now(),
+    };
+
+    console.log('🌡️ Novo monitoramento criado:', novoMonitoramento);
+
+    try {
+      const monitoramentosRegistrados = await AsyncStorage.getItem('leirasMonitoramento');
+      const monitoramentosData = monitoramentosRegistrados
+        ? JSON.parse(monitoramentosRegistrados)
+        : [];
+
+      monitoramentosData.push(novoMonitoramento);
+
+      await AsyncStorage.setItem('leirasMonitoramento', JSON.stringify(monitoramentosData));
+
+      console.log('✅ Monitoramento salvo em AsyncStorage');
+
+      // ===== ADICIONAR À FILA DE SINCRONIZAÇÃO =====
+      await syncService.adicionarFila('monitoramento', novoMonitoramento);
+      console.log('📤 Monitoramento adicionado à fila de sincronização');
+
+      let leiraAtualizada = leira;
+
+      if (leira && formData.statusNovo !== leira.status) {
+        console.log('🔄 Atualizando status da leira...');
+
+        const leirasRegistradas = await AsyncStorage.getItem('leirasFormadas');
+        const leirasData = leirasRegistradas ? JSON.parse(leirasRegistradas) : [];
+
+        const leiraIndex = leirasData.findIndex((l: Leira) => l.id === leiraId);
+
+        if (leiraIndex !== -1) {
+          leirasData[leiraIndex].status = formData.statusNovo;
+
+          await AsyncStorage.setItem('leirasFormadas', JSON.stringify(leirasData));
+
+          console.log('✅ Status da leira atualizado para:', formData.statusNovo);
+
+          leiraAtualizada = { ...leirasData[leiraIndex] };
+          setLeira(leiraAtualizada);
+
+          // ===== SINCRONIZAR LEIRA ATUALIZADA =====
+          await syncService.adicionarFila('leira', leiraAtualizada);
+          console.log('📤 Leira atualizada adicionada à fila de sincronização');
+        }
+      }
+
+      const monitoramentosAtualizados = [novoMonitoramento, ...monitoramentos];
+      setMonitoramentos(monitoramentosAtualizados);
+
+      if (temperaturas.length > 0) {
+        const alertaAtual = verificarAlertaTemperatura(monitoramentosAtualizados);
+        setAlerta(alertaAtual);
+      } else {
+        setAlerta({
+          ativo: false,
+          dias: 0,
+          temperatura: 0,
+          mensagem: '',
+          tempMedia1: 0,
+          tempMedia2: 0,
+          data1: '',
+          data2: '',
+        });
+      }
+
+      setFormData({
+        data: new Date().toLocaleDateString('pt-BR'),
+        topoTemp: '',
+        meioTemp: '',
+        fundoTemp: '',
+        revolveu: false,
+        statusNovo: formData.statusNovo,
+        observacoes: '',
+        volumeOriginal: formData.volumeOriginal,
+        volumeFinal: '',
+        localDeposito: '',
+      });
+
+      setShowForm(false);
+
+      Alert.alert(
+        'Sucesso! ✅',
+        'Monitoramento registrado!\n\nOs dados serão sincronizados com o servidor quando você conectar à internet.'
+      );
+
+      console.log('✅ ===== MONITORAMENTO REGISTRADO COM SUCESSO =====');
+    } catch (error) {
+      console.error('❌ Erro ao salvar monitoramento:', error);
+      Alert.alert('Erro', 'Não foi possível registrar o monitoramento');
+    }
+  }
+
 
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={PALETTE.verdePrimario} />
-          <Text style={styles.loadingText}>Carregando detalhes...</Text>
-        </View>
-      </SafeAreaView>
-    );
+    <SafeAreaView style={styles.container}>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={PALETTE.verdePrimario} />
+        <Text style={styles.loadingText}>Carregando detalhes...</Text>
+      </View>
+    </SafeAreaView>
+   );
   }
+
 
   if (!leira) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Leira não encontrada</Text>
-          <TouchableOpacity
-            style={styles.errorButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.errorButtonText}>Voltar</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>Leira não encontrada</Text>
+        <TouchableOpacity
+          style={styles.errorButton}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.errorButtonText}>Voltar</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* ===== HEADER ===== */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
 
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Detalhes da Leira</Text>
-          <View style={styles.backButton} />
+  return (
+  <SafeAreaView style={styles.container}>
+    <ScrollView contentContainerStyle={styles.scrollContent}>
+      {/* ===== HEADER ===== */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Detalhes da Leira</Text>
+        <View style={styles.backButton} />
+      </View>
+
+      {/* ===== ALERTA DE TEMPERATURA ===== */}
+      {alerta.ativo && (
+        <View style={styles.alertaCard}>
+          <View style={styles.alertaHeader}>
+            <Text style={styles.alertaIcon}>🔴</Text>
+            <View style={styles.alertaHeaderContent}>
+              <Text style={styles.alertaTitle}>ALERTA DE TEMPERATURA ELEVADA</Text>
+              <Text style={styles.alertaSubtitle}>Ação necessária: Realizar revolvimento</Text>
+            </View>
+          </View>
+
+          <View style={styles.alertaContent}>
+            <View style={styles.alertaRow}>
+              <Text style={styles.alertaLabel}>📍 Leira:</Text>
+              <Text style={styles.alertaValue}>#{leira.numeroLeira}</Text>
+            </View>
+
+            <View style={styles.alertaRow}>
+              <Text style={styles.alertaLabel}>📦 Lote:</Text>
+              <Text style={styles.alertaValue}>{leira.lote}</Text>
+            </View>
+
+            <View style={styles.alertaRow}>
+              <Text style={styles.alertaLabel}>🔄 Status:</Text>
+              <Text style={styles.alertaValue}>{getStatusLabel(leira.status)}</Text>
+            </View>
+
+            <View style={styles.alertaDivider} />
+
+            <View style={styles.alertaTemperaturas}>
+              <View style={styles.alertaTempItem}>
+                <Text style={styles.alertaTempLabel}>Dia 1</Text>
+                <Text style={styles.alertaTempData}>{alerta.data2}</Text>
+                <Text style={styles.alertaTempValue}>{alerta.tempMedia2.toFixed(1)}°C</Text>
+              </View>
+
+              <View style={styles.alertaTempSeparador}>
+                <Text style={styles.alertaTempSeparadorText}>vs</Text>
+              </View>
+
+              <View style={styles.alertaTempItem}>
+                <Text style={styles.alertaTempLabel}>Dia 2</Text>
+                <Text style={styles.alertaTempData}>{alerta.data1}</Text>
+                <Text style={styles.alertaTempValue}>{alerta.tempMedia1.toFixed(1)}°C</Text>
+              </View>
+            </View>
+
+            <Text style={styles.alertaFooter}>
+              ⚠️ Ambas as medições ultrapassaram 65°C
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* ===== INFO DA LEIRA ===== */}
+      <View style={styles.leiraInfoBox}>
+        <View style={styles.leiraInfoLeft}>
+          <Text style={styles.leiraInfoNumber}>Leira #{leira.numeroLeira}</Text>
+          <Text style={styles.leiraInfoLote}>Lote {leira.lote}</Text>
+          <Text style={styles.leiraInfoData}>{leira.dataFormacao}</Text>
+          <Text style={styles.leiraInfoDias}>
+            {getDiasPassados(leira.dataFormacao)} dia(s) atrás
+          </Text>
         </View>
 
-        {/* ===== ALERTA DE TEMPERATURA ===== */}
-        {alerta.ativo && (
-          <View style={styles.alertaCard}>
-            <View style={styles.alertaHeader}>
-              <Text style={styles.alertaIcon}>🔴</Text>
-              <View style={styles.alertaHeaderContent}>
-                <Text style={styles.alertaTitle}>ALERTA DE TEMPERATURA ELEVADA</Text>
-                <Text style={styles.alertaSubtitle}>Ação necessária: Realizar revolvimento</Text>
-              </View>
-            </View>
+        <View
+          style={[
+            styles.leiraInfoStatus,
+            { backgroundColor: getStatusColor(leira.status) },
+          ]}
+        >
+          <Text style={styles.leiraInfoStatusText}>
+            {getStatusLabel(leira.status)}
+          </Text>
+        </View>
+      </View>
 
-            <View style={styles.alertaContent}>
-              <View style={styles.alertaRow}>
-                <Text style={styles.alertaLabel}>📍 Leira:</Text>
-                <Text style={styles.alertaValue}>#{leira.numeroLeira}</Text>
-              </View>
+      {/* ===== DADOS DA LEIRA ===== */}
+      <View style={styles.dadosBox}>
+        <Text style={styles.dadosTitle}>📦 Dados da Leira</Text>
 
-              <View style={styles.alertaRow}>
-                <Text style={styles.alertaLabel}>📦 Lote:</Text>
-                <Text style={styles.alertaValue}>{leira.lote}</Text>
-              </View>
+        <View style={styles.dadosGrid}>
+          <DadoItem label="Biossólido" value={`${leira.totalBiossólido.toFixed(1)} ton`} />
+          <DadoItem label="Bagaço" value="12 ton" />
+          <DadoItem
+            label="Total"
+            value={`${(leira.totalBiossólido + 12).toFixed(1)} ton`}
+          />
+          <DadoItem label="Monitoramentos" value={monitoramentos.length.toString()} />
+        </View>
 
-              <View style={styles.alertaRow}>
-                <Text style={styles.alertaLabel}>🔄 Status:</Text>
-                <Text style={styles.alertaValue}>{getStatusLabel(leira.status)}</Text>
-              </View>
-
-              <View style={styles.alertaDivider} />
-
-              <View style={styles.alertaTemperaturas}>
-                <View style={styles.alertaTempItem}>
-                  <Text style={styles.alertaTempLabel}>Dia 1</Text>
-                  <Text style={styles.alertaTempData}>{alerta.data2}</Text>
-                  <Text style={styles.alertaTempValue}>{alerta.tempMedia2.toFixed(1)}°C</Text>
-                </View>
-
-                <View style={styles.alertaTempSeparador}>
-                  <Text style={styles.alertaTempSeparadorText}>vs</Text>
-                </View>
-
-                <View style={styles.alertaTempItem}>
-                  <Text style={styles.alertaTempLabel}>Dia 2</Text>
-                  <Text style={styles.alertaTempData}>{alerta.data1}</Text>
-                  <Text style={styles.alertaTempValue}>{alerta.tempMedia1.toFixed(1)}°C</Text>
+        {leira.biossólidos && leira.biossólidos.length > 0 && (
+          <View style={styles.biossólidosList}>
+            <Text style={styles.biossólidosTitle}>Biossólidos Utilizados:</Text>
+            {leira.biossólidos.map((bio, index) => (
+              <View key={bio.id} style={styles.biossólidoItem}>
+                <Text style={styles.biossólidoNumber}>{index + 1}.</Text>
+                <View style={styles.biossólidoInfo}>
+                  <Text style={styles.biossólidoMTR}>{bio.numeroMTR}</Text>
+                  <Text style={styles.biossólidoOrigemData}>
+                    {bio.origem} • {bio.data}
+                  </Text>
+                  <Text style={styles.biossólidoPeso}>{bio.peso} ton</Text>
                 </View>
               </View>
-
-              <Text style={styles.alertaFooter}>
-                ⚠️ Ambas as medições ultrapassaram 65°C
-              </Text>
-            </View>
+            ))}
           </View>
         )}
+      </View>
 
-        {/* ===== INFO DA LEIRA ===== */}
-        <View style={styles.leiraInfoBox}>
-          <View style={styles.leiraInfoLeft}>
-            <Text style={styles.leiraInfoNumber}>Leira #{leira.numeroLeira}</Text>
-            <Text style={styles.leiraInfoLote}>Lote {leira.lote}</Text>
-            <Text style={styles.leiraInfoData}>{leira.dataFormacao}</Text>
-            <Text style={styles.leiraInfoDias}>
-              {getDiasPassados(leira.dataFormacao)} dia(s) atrás
-            </Text>
+      <ClimaDaLeira
+        leiraId={leiraId as string}
+        onDataLoaded={(registros) =>
+          console.log(`📊 ${registros.length} registros climáticos carregados`)
+        }
+      />
+
+      {/* ===== FORM DE MONITORAMENTO ===== */}
+      {showForm ? (
+        <View style={styles.formCard}>
+          <Text style={styles.formTitle}>📝 Registrar Monitoramento</Text>
+
+          {/* DATA */}
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Data</Text>
+            <View style={styles.inputBox}>
+              <Text style={styles.inputIcon}>📅</Text>
+              <RNTextInput
+                style={styles.input}
+                placeholder="DD/MM/YYYY"
+                value={formData.data}
+                onChangeText={(text) => {
+                  const formatted = formatarData(text);
+                  setFormData({ ...formData, data: formatted });
+                }}
+                maxLength={10}
+                keyboardType="numeric"
+              />
+            </View>
           </View>
 
-          <View
-            style={[
-              styles.leiraInfoStatus,
-              { backgroundColor: getStatusColor(leira.status) },
-            ]}
-          >
-            <Text style={styles.leiraInfoStatusText}>
-              {getStatusLabel(leira.status)}
-            </Text>
-          </View>
-        </View>
+          {/* TEMPERATURAS - OPCIONAL */}
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>🌡️ Temperaturas (°C) - Opcional</Text>
 
-        {/* ===== DADOS DA LEIRA ===== */}
-        <View style={styles.dadosBox}>
-          <Text style={styles.dadosTitle}>📦 Dados da Leira</Text>
-
-          <View style={styles.dadosGrid}>
-            <DadoItem label="Biossólido" value={`${leira.totalBiossólido.toFixed(1)} ton`} />
-            <DadoItem label="Bagaço" value="12 ton" />
-            <DadoItem
-              label="Total"
-              value={`${(leira.totalBiossólido + 12).toFixed(1)} ton`}
-            />
-            <DadoItem label="Monitoramentos" value={monitoramentos.length.toString()} />
-          </View>
-
-          {leira.biossólidos && leira.biossólidos.length > 0 && (
-            <View style={styles.biossólidosList}>
-              <Text style={styles.biossólidosTitle}>Biossólidos Utilizados:</Text>
-              {leira.biossólidos.map((bio, index) => (
-                <View key={bio.id} style={styles.biossólidoItem}>
-                  <Text style={styles.biossólidoNumber}>{index + 1}.</Text>
-                  <View style={styles.biossólidoInfo}>
-                    <Text style={styles.biossólidoMTR}>{bio.numeroMTR}</Text>
-                    <Text style={styles.biossólidoOrigemData}>
-                      {bio.origem} • {bio.data}
-                    </Text>
-                    <Text style={styles.biossólidoPeso}>{bio.peso} ton</Text>
-                  </View>
+            <View style={styles.temperaturasGrid}>
+              <View style={styles.tempItem}>
+                <Text style={styles.tempLabel}>Topo</Text>
+                <View style={styles.inputBox}>
+                  <RNTextInput
+                    style={styles.input}
+                    placeholder="Ex: 65"
+                    value={formData.topoTemp}
+                    onChangeText={(text) =>
+                      setFormData({ ...formData, topoTemp: text })
+                    }
+                    keyboardType="decimal-pad"
+                  />
                 </View>
+              </View>
+
+              <View style={styles.tempItem}>
+                <Text style={styles.tempLabel}>Meio</Text>
+                <View style={styles.inputBox}>
+                  <RNTextInput
+                    style={styles.input}
+                    placeholder="Ex: 70"
+                    value={formData.meioTemp}
+                    onChangeText={(text) =>
+                      setFormData({ ...formData, meioTemp: text })
+                    }
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.tempItem}>
+                <Text style={styles.tempLabel}>Fundo</Text>
+                <View style={styles.inputBox}>
+                  <RNTextInput
+                    style={styles.input}
+                    placeholder="Ex: 60"
+                    value={formData.fundoTemp}
+                    onChangeText={(text) =>
+                      setFormData({ ...formData, fundoTemp: text })
+                    }
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+              </View>
+            </View>
+
+            <Text style={styles.tempHint}>
+              💡 Se informar temperatura, todos os 3 pontos devem ser preenchidos
+            </Text>
+          </View>
+
+          {/* REVOLVIMENTO */}
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>♻️ Revolvimento</Text>
+            <View style={styles.revolvimentoOptions}>
+              {[true, false].map((value) => (
+                <TouchableOpacity
+                  key={value ? 'sim' : 'não'}
+                  style={[
+                    styles.revolvimentoBtn,
+                    formData.revolveu === value && styles.revolvimentoBtnActive,
+                  ]}
+                  onPress={() => setFormData({ ...formData, revolveu: value })}
+                >
+                  <Text
+                    style={[
+                      styles.revolvimentoBtnText,
+                      formData.revolveu === value && styles.revolvimentoBtnTextActive,
+                    ]}
+                  >
+                    {value ? '✅ Sim' : '❌ Não'}
+                  </Text>
+                </TouchableOpacity>
               ))}
             </View>
-          )}
-        </View>
+          </View>
 
-        <ClimaDaLeira
-          leiraId={leiraId as string}
-          onDataLoaded={(registros) =>
-            console.log(`📊 ${registros.length} registros climáticos carregados`)
-          }
-        />
-
-        {/* ===== FORM DE MONITORAMENTO ===== */}
-        {showForm ? (
-          <View style={styles.formCard}>
-            <Text style={styles.formTitle}>📝 Registrar Monitoramento</Text>
-
-            {/* DATA */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Data</Text>
-              <View style={styles.inputBox}>
-                <Text style={styles.inputIcon}>📅</Text>
-                <RNTextInput
-                  style={styles.input}
-                  placeholder="DD/MM/YYYY"
-                  value={formData.data}
-                  onChangeText={(text) => {
-                    const formatted = formatarData(text);
-                    setFormData({ ...formData, data: formatted });
+          {/* STATUS */}
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>📊 Status</Text>
+            <View style={styles.statusOptions}>
+              {['formada', 'secando', 'compostando', 'maturando', 'pronta'].map((status) => (
+                <TouchableOpacity
+                  key={status}
+                  style={[
+                    styles.statusBtn,
+                    formData.statusNovo === status && styles.statusBtnActive,
+                    { borderTopColor: getStatusColor(status) },
+                  ]}
+                  onPress={() => {
+                    // Se mudar de status e não for pronta, limpa o local de depósito
+                    setFormData({
+                      ...formData,
+                      statusNovo: status,
+                      localDeposito: status === 'pronta' ? formData.localDeposito : ''
+                    });
                   }}
-                  maxLength={10}
-                  keyboardType="numeric"
-                />
-              </View>
-            </View>
-
-            {/* TEMPERATURAS - OPCIONAL */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>🌡️ Temperaturas (°C) - Opcional</Text>
-
-              <View style={styles.temperaturasGrid}>
-                <View style={styles.tempItem}>
-                  <Text style={styles.tempLabel}>Topo</Text>
-                  <View style={styles.inputBox}>
-                    <RNTextInput
-                      style={styles.input}
-                      placeholder="Ex: 65"
-                      value={formData.topoTemp}
-                      onChangeText={(text) =>
-                        setFormData({ ...formData, topoTemp: text })
-                      }
-                      keyboardType="decimal-pad"
-                    />
-                  </View>
-                </View>
-
-                <View style={styles.tempItem}>
-                  <Text style={styles.tempLabel}>Meio</Text>
-                  <View style={styles.inputBox}>
-                    <RNTextInput
-                      style={styles.input}
-                      placeholder="Ex: 70"
-                      value={formData.meioTemp}
-                      onChangeText={(text) =>
-                        setFormData({ ...formData, meioTemp: text })
-                      }
-                      keyboardType="decimal-pad"
-                    />
-                  </View>
-                </View>
-
-                <View style={styles.tempItem}>
-                  <Text style={styles.tempLabel}>Fundo</Text>
-                  <View style={styles.inputBox}>
-                    <RNTextInput
-                      style={styles.input}
-                      placeholder="Ex: 60"
-                      value={formData.fundoTemp}
-                      onChangeText={(text) =>
-                        setFormData({ ...formData, fundoTemp: text })
-                      }
-                      keyboardType="decimal-pad"
-                    />
-                  </View>
-                </View>
-              </View>
-
-              <Text style={styles.tempHint}>
-                💡 Se informar temperatura, todos os 3 pontos devem ser preenchidos
-              </Text>
-            </View>
-
-            {/* REVOLVIMENTO */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>♻️ Revolvimento</Text>
-              <View style={styles.revolvimentoOptions}>
-                {[true, false].map((value) => (
-                  <TouchableOpacity
-                    key={value ? 'sim' : 'não'}
+                >
+                  <Text
                     style={[
-                      styles.revolvimentoBtn,
-                      formData.revolveu === value && styles.revolvimentoBtnActive,
+                      styles.statusBtnText,
+                      formData.statusNovo === status && styles.statusBtnTextActive,
                     ]}
-                    onPress={() => setFormData({ ...formData, revolveu: value })}
                   >
-                    <Text
-                      style={[
-                        styles.revolvimentoBtnText,
-                        formData.revolveu === value && styles.revolvimentoBtnTextActive,
-                      ]}
-                    >
-                      {value ? '✅ Sim' : '❌ Não'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* STATUS */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>📊 Status</Text>
-              <View style={styles.statusOptions}>
-                {['formada', 'secando', 'compostando', 'maturando', 'pronta'].map((status) => (
-                  <TouchableOpacity
-                    key={status}
-                    style={[
-                      styles.statusBtn,
-                      formData.statusNovo === status && styles.statusBtnActive,
-                      { borderTopColor: getStatusColor(status) },
-                    ]}
-                    onPress={() => setFormData({ ...formData, statusNovo: status })}
-                  >
-                    <Text
-                      style={[
-                        styles.statusBtnText,
-                        formData.statusNovo === status && styles.statusBtnTextActive,
-                      ]}
-                    >
-                      {status === 'formada'
-                        ? '📦 Formada'
-                        : status === 'secando'
-                          ? '💨 Secagem'
-                          : status === 'compostando'
-                            ? '🔄 Compostagem'
-                            : status === 'maturando'
-                              ? '🌱 Maturação'
-                              : '✅ Venda'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* OBSERVAÇÕES */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>📝 Observações (Opcional)</Text>
-              <View style={styles.textareaBox}>
-                <RNTextInput
-                  style={styles.textarea}
-                  placeholder="Digite suas observações aqui..."
-                  value={formData.observacoes}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, observacoes: text })
-                  }
-                  multiline
-                  numberOfLines={4}
-                />
-              </View>
-            </View>
-
-            {/* BOTÕES */}
-            <View style={styles.buttonGroup}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setShowForm(false)}
-              >
-                <Text style={styles.cancelBtnText}>Cancelar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.submitBtn}
-                onPress={handleRegistrarMonitoramento}
-              >
-                <Text style={styles.submitBtnText}>Registrar Monitoramento</Text>
-              </TouchableOpacity>
+                    {status === 'formada'
+                      ? '📦 Formada'
+                      : status === 'secando'
+                        ? '💨 Secagem'
+                        : status === 'compostando'
+                          ? '🔄 Compostagem'
+                          : status === 'maturando'
+                            ? '🌱 Maturação'
+                            : '✅ Venda'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={() => setShowForm(true)}
-          >
-            <Text style={styles.addBtnIcon}>+</Text>
-            <Text style={styles.addBtnText}>Registrar Monitoramento</Text>
-          </TouchableOpacity>
-        )}
 
-        {/* ===== FORM DE ENRIQUECIMENTO ===== */}
-        {showEnriquecimentoForm ? (
-          <View style={styles.formCard}>
-            <Text style={styles.formTitle}>💪 Enriquecer Leira</Text>
+          {/* ✅ NOVO: LOCAL DE DEPÓSITO (Aparece apenas se status for "pronta") */}
+          {formData.statusNovo === 'pronta' && (
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>📍 Local de Depósito</Text>
+              <View style={styles.depositoOptions}>
+                {['Depósito Bambu', 'Pátio Norte', 'Depósito Produto Pronto'].map((local) => (
+                  <TouchableOpacity
+                    key={local}
+                    style={[
+                      styles.depositoBtn,
+                      formData.localDeposito === local && styles.depositoBtnActive,
+                    ]}
+                    onPress={() => setFormData({ ...formData, localDeposito: local })}
+                  >
+                    <Text
+                      style={[
+                        styles.depositoBtnText,
+                        formData.localDeposito === local && styles.depositoBtnTextActive,
+                      ]}
+                    >
+                      {local}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
 
-            {/* INFO ATUAL */}
-            <View style={styles.enriquecimentoInfo}>
-              <View>
-                <Text style={styles.enriquecimentoInfoLabel}>Total Atual</Text>
-                <Text style={styles.enriquecimentoInfoValue}>
+          {/* OBSERVAÇÕES */}
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>📝 Observações (Opcional)</Text>
+            <View style={styles.textareaBox}>
+              <RNTextInput
+                style={styles.textarea}
+                placeholder="Digite suas observações aqui..."
+                value={formData.observacoes}
+                onChangeText={(text) =>
+                  setFormData({ ...formData, observacoes: text })
+                }
+                multiline
+                numberOfLines={4}
+              />
+            </View>
+          </View>
+
+          {/* BOTÕES */}
+          <View style={styles.buttonGroup}>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setShowForm(false)}
+            >
+              <Text style={styles.cancelBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.submitBtn}
+              onPress={handleRegistrarMonitoramento}
+            >
+              <Text style={styles.submitBtnText}>Registrar Monitoramento</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => setShowForm(true)}
+        >
+          <Text style={styles.addBtnIcon}>+</Text>
+          <Text style={styles.addBtnText}>Registrar Monitoramento</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ===== FORM DE ENRIQUECIMENTO ===== */}
+      {showEnriquecimentoForm ? (
+        <View style={styles.formCard}>
+          <Text style={styles.formTitle}>💪 Enriquecer Leira</Text>
+
+          {/* INFO ATUAL */}
+          <View style={styles.enriquecimentoInfo}>
+            <View>
+              <Text style={styles.enriquecimentoInfoLabel}>Total Atual</Text>
+              <Text style={styles.enriquecimentoInfoValue}>
+                {calcularTotalComEnriquecimentos(leira).toFixed(2)} ton
+              </Text>
+            </View>
+          </View>
+
+          {/* DATA */}
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>📅 Data</Text>
+            <View style={styles.inputBox}>
+              <Text style={styles.inputIcon}>📅</Text>
+              <RNTextInput
+                style={styles.input}
+                placeholder="DD/MM/YYYY"
+                value={enriquecimentoData.data}
+                onChangeText={(text) => {
+                  const formatted = formatarData(text);
+                  setEnriquecimentoData({ ...enriquecimentoData, data: formatted });
+                }}
+                maxLength={10}
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
+
+          {/* PESO ADICIONADO */}
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>⚖️ Peso Adicionado (toneladas)</Text>
+            <View style={styles.inputBox}>
+              <Text style={styles.inputIcon}>⚖️</Text>
+              <RNTextInput
+                style={styles.input}
+                placeholder="Ex: 15"
+                value={enriquecimentoData.pesoAdicionado}
+                onChangeText={(text) =>
+                  setEnriquecimentoData({ ...enriquecimentoData, pesoAdicionado: text })
+                }
+                keyboardType="decimal-pad"
+              />
+              <Text style={styles.inputSuffix}>ton</Text>
+            </View>
+          </View>
+
+          {/* MTR */}
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>🔢 Número MTR (Opcional)</Text>
+            <View style={styles.inputBox}>
+              <Text style={styles.inputIcon}>🔢</Text>
+              <RNTextInput
+                style={styles.input}
+                placeholder="Ex: MTR-2025-0001"
+                value={enriquecimentoData.numeroMTR}
+                onChangeText={(text) =>
+                  setEnriquecimentoData({ ...enriquecimentoData, numeroMTR: text })
+                }
+              />
+            </View>
+          </View>
+
+          {/* ORIGEM */}
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>📍 Origem (Opcional)</Text>
+            <View style={styles.origemOptions}>
+              {['Sabesp', 'Ambient', 'Outro'].map((opt) => (
+                <TouchableOpacity
+                  key={opt}
+                  style={[
+                    styles.origemBtn,
+                    enriquecimentoData.origem === opt && styles.origemBtnActive,
+                  ]}
+                  onPress={() =>
+                    setEnriquecimentoData({ ...enriquecimentoData, origem: opt })
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.origemBtnText,
+                      enriquecimentoData.origem === opt && styles.origemBtnTextActive,
+                    ]}
+                  >
+                    {opt}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* OBSERVAÇÕES */}
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>📝 Observações (Opcional)</Text>
+            <View style={styles.textareaBox}>
+              <RNTextInput
+                style={styles.textarea}
+                placeholder="Motivo do enriquecimento..."
+                value={enriquecimentoData.observacoes}
+                onChangeText={(text) =>
+                  setEnriquecimentoData({ ...enriquecimentoData, observacoes: text })
+                }
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+          </View>
+
+          {/* PREVIEW */}
+          {enriquecimentoData.pesoAdicionado && (
+            <View style={styles.enriquecimentoPreview}>
+              <View style={styles.enriquecimentoPreviewItem}>
+                <Text style={styles.enriquecimentoPreviewLabel}>Atual</Text>
+                <Text style={styles.enriquecimentoPreviewValue}>
                   {calcularTotalComEnriquecimentos(leira).toFixed(2)} ton
                 </Text>
               </View>
-            </View>
 
-            {/* DATA */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>📅 Data</Text>
-              <View style={styles.inputBox}>
-                <Text style={styles.inputIcon}>📅</Text>
-                <RNTextInput
-                  style={styles.input}
-                  placeholder="DD/MM/YYYY"
-                  value={enriquecimentoData.data}
-                  onChangeText={(text) => {
-                    const formatted = formatarData(text);
-                    setEnriquecimentoData({ ...enriquecimentoData, data: formatted });
-                  }}
-                  maxLength={10}
-                  keyboardType="numeric"
-                />
+              <Text style={styles.enriquecimentoPreviewSeta}>+</Text>
+
+              <View style={styles.enriquecimentoPreviewItem}>
+                <Text style={styles.enriquecimentoPreviewLabel}>Adicionado</Text>
+                <Text style={styles.enriquecimentoPreviewValue}>
+                  {parseFloat(enriquecimentoData.pesoAdicionado || '0').toFixed(2)} ton
+                </Text>
               </View>
-            </View>
 
-            {/* PESO ADICIONADO */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>⚖️ Peso Adicionado (toneladas)</Text>
-              <View style={styles.inputBox}>
-                <Text style={styles.inputIcon}>⚖️</Text>
-                <RNTextInput
-                  style={styles.input}
-                  placeholder="Ex: 15"
-                  value={enriquecimentoData.pesoAdicionado}
-                  onChangeText={(text) =>
-                    setEnriquecimentoData({ ...enriquecimentoData, pesoAdicionado: text })
-                  }
-                  keyboardType="decimal-pad"
-                />
-                <Text style={styles.inputSuffix}>ton</Text>
+              <Text style={styles.enriquecimentoPreviewSeta}>=</Text>
+
+              <View style={styles.enriquecimentoPreviewItem}>
+                <Text style={styles.enriquecimentoPreviewLabel}>Novo</Text>
+                <Text style={styles.enriquecimentoPreviewValueNew}>
+                  {(
+                    calcularTotalComEnriquecimentos(leira) +
+                    parseFloat(enriquecimentoData.pesoAdicionado || '0')
+                  ).toFixed(2)}{' '}
+                  ton
+                </Text>
               </View>
-            </View>
-
-            {/* MTR */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>🔢 Número MTR (Opcional)</Text>
-              <View style={styles.inputBox}>
-                <Text style={styles.inputIcon}>🔢</Text>
-                <RNTextInput
-                  style={styles.input}
-                  placeholder="Ex: MTR-2025-0001"
-                  value={enriquecimentoData.numeroMTR}
-                  onChangeText={(text) =>
-                    setEnriquecimentoData({ ...enriquecimentoData, numeroMTR: text })
-                  }
-                />
-              </View>
-            </View>
-
-            {/* ORIGEM */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>📍 Origem (Opcional)</Text>
-              <View style={styles.origemOptions}>
-                {['Sabesp', 'Ambient', 'Outro'].map((opt) => (
-                  <TouchableOpacity
-                    key={opt}
-                    style={[
-                      styles.origemBtn,
-                      enriquecimentoData.origem === opt && styles.origemBtnActive,
-                    ]}
-                    onPress={() =>
-                      setEnriquecimentoData({ ...enriquecimentoData, origem: opt })
-                    }
-                  >
-                    <Text
-                      style={[
-                        styles.origemBtnText,
-                        enriquecimentoData.origem === opt && styles.origemBtnTextActive,
-                      ]}
-                    >
-                      {opt}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* OBSERVAÇÕES */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>📝 Observações (Opcional)</Text>
-              <View style={styles.textareaBox}>
-                <RNTextInput
-                  style={styles.textarea}
-                  placeholder="Motivo do enriquecimento..."
-                  value={enriquecimentoData.observacoes}
-                  onChangeText={(text) =>
-                    setEnriquecimentoData({ ...enriquecimentoData, observacoes: text })
-                  }
-                  multiline
-                  numberOfLines={3}
-                />
-              </View>
-            </View>
-
-            {/* PREVIEW */}
-            {enriquecimentoData.pesoAdicionado && (
-              <View style={styles.enriquecimentoPreview}>
-                <View style={styles.enriquecimentoPreviewItem}>
-                  <Text style={styles.enriquecimentoPreviewLabel}>Atual</Text>
-                  <Text style={styles.enriquecimentoPreviewValue}>
-                    {calcularTotalComEnriquecimentos(leira).toFixed(2)} ton
-                  </Text>
-                </View>
-
-                <Text style={styles.enriquecimentoPreviewSeta}>+</Text>
-
-                <View style={styles.enriquecimentoPreviewItem}>
-                  <Text style={styles.enriquecimentoPreviewLabel}>Adicionado</Text>
-                  <Text style={styles.enriquecimentoPreviewValue}>
-                    {parseFloat(enriquecimentoData.pesoAdicionado || '0').toFixed(2)} ton
-                  </Text>
-                </View>
-
-                <Text style={styles.enriquecimentoPreviewSeta}>=</Text>
-
-                <View style={styles.enriquecimentoPreviewItem}>
-                  <Text style={styles.enriquecimentoPreviewLabel}>Novo</Text>
-                  <Text style={styles.enriquecimentoPreviewValueNew}>
-                    {(
-                      calcularTotalComEnriquecimentos(leira) +
-                      parseFloat(enriquecimentoData.pesoAdicionado || '0')
-                    ).toFixed(2)}{' '}
-                    ton
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {/* BOTÕES */}
-            <View style={styles.buttonGroup}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setShowEnriquecimentoForm(false)}
-              >
-                <Text style={styles.cancelBtnText}>Cancelar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.submitBtn}
-                onPress={handleRegistrarEnriquecimento}
-              >
-                <Text style={styles.submitBtnText}>Registrar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.enriquecimentoBtn}
-            onPress={() => setShowEnriquecimentoForm(true)}
-          >
-            <Text style={styles.addBtnIcon}>💪</Text>
-            <Text style={styles.addBtnText}>Enriquecer Leira</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* ===== HISTÓRICO DE ENRIQUECIMENTOS ===== */}
-        {enriquecimentos.length > 0 && (
-          <View style={styles.historicoSection}>
-            <Text style={styles.historicoTitle}>💪 Histórico de Enriquecimentos</Text>
-
-            <FlatList
-              data={getEnriquecimentosOrdenados(enriquecimentos)}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-              renderItem={({ item }) => (
-                <EnriquecimentoCard enriquecimento={item} />
-              )}
-            />
-          </View>
-        )}
-
-        {/* ===== HISTÓRICO DE MONITORAMENTOS ===== */}
-        <View style={styles.historicoSection}>
-          <Text style={styles.historicoTitle}>📋 Histórico de Monitoramentos</Text>
-
-          {monitoramentos.length > 0 ? (
-            <FlatList
-              data={monitoramentos}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-              renderItem={({ item }) => (
-                <MonitoramentoCard monitoramento={item} leira={leira} />
-              )}
-            />
-          ) : (
-            <View style={styles.emptyHistorico}>
-              <Text style={styles.emptyIcon}>📭</Text>
-              <Text style={styles.emptyText}>Nenhum monitoramento registrado</Text>
             </View>
           )}
+
+          {/* BOTÕES */}
+          <View style={styles.buttonGroup}>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setShowEnriquecimentoForm(false)}
+            >
+              <Text style={styles.cancelBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.submitBtn}
+              onPress={handleRegistrarEnriquecimento}
+            >
+              <Text style={styles.submitBtnText}>Registrar</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+      ) : (
+        <TouchableOpacity
+          style={styles.enriquecimentoBtn}
+          onPress={() => setShowEnriquecimentoForm(true)}
+        >
+          <Text style={styles.addBtnIcon}>💪</Text>
+          <Text style={styles.addBtnText}>Enriquecer Leira</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ===== HISTÓRICO DE ENRIQUECIMENTOS ===== */}
+      {enriquecimentos.length > 0 && (
+        <View style={styles.historicoSection}>
+          <Text style={styles.historicoTitle}>💪 Histórico de Enriquecimentos</Text>
+
+          <FlatList
+            data={getEnriquecimentosOrdenados(enriquecimentos)}
+            keyExtractor={(item) => item.id}
+            scrollEnabled={false}
+            renderItem={({ item }) => (
+              <EnriquecimentoCard enriquecimento={item} />
+            )}
+          />
+        </View>
+      )}
+
+      {/* ===== HISTÓRICO DE MONITORAMENTOS ===== */}
+      <View style={styles.historicoSection}>
+        <Text style={styles.historicoTitle}>📋 Histórico de Monitoramentos</Text>
+
+        {monitoramentos.length > 0 ? (
+          <FlatList
+            data={monitoramentos}
+            keyExtractor={(item) => item.id}
+            scrollEnabled={false}
+            renderItem={({ item }) => (
+              <MonitoramentoCard monitoramento={item} leira={leira} />
+            )}
+          />
+        ) : (
+          <View style={styles.emptyHistorico}>
+            <Text style={styles.emptyIcon}>📭</Text>
+            <Text style={styles.emptyText}>Nenhum monitoramento registrado</Text>
+          </View>
+        )}
+      </View>
+    </ScrollView>
+  </SafeAreaView>
   );
 }
+
 
 // ===== COMPONENTE: ENRIQUECIMENTO CARD =====
 function EnriquecimentoCard({
@@ -1444,39 +1461,6 @@ function MonitoramentoCard({
         </View>
       )}
 
-      {monitoramento.quebraVolume !== undefined && (
-        <View style={styles.quebraCard}>
-          <Text style={styles.quebraCardTitle}>📉 Quebra de Volume</Text>
-
-          <View style={styles.quebraCardContent}>
-            <View style={styles.quebraCardItem}>
-              <Text style={styles.quebraCardLabel}>Original</Text>
-              <Text style={styles.quebraCardValue}>
-                {monitoramento.volumeOriginal?.toFixed(2)} ton
-              </Text>
-            </View>
-
-            <Text style={styles.quebraCardSeta}>→</Text>
-
-            <View style={styles.quebraCardItem}>
-              <Text style={styles.quebraCardLabel}>Final</Text>
-              <Text style={styles.quebraCardValue}>
-                {monitoramento.volumeFinal?.toFixed(2)} ton
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.quebraCardResult}>
-            <Text style={styles.quebraCardResultLabel}>Perda:</Text>
-            <Text style={styles.quebraCardResultValue}>
-              {monitoramento.quebraVolume?.toFixed(2)} ton
-            </Text>
-            <Text style={styles.quebraCardResultPercentual}>
-              ({monitoramento.percentualQuebra?.toFixed(1)}%)
-            </Text>
-          </View>
-        </View>
-      )}
 
       {monitoramento.statusNovo === 'pronta' && monitoramento.diasDesdeFormacao !== undefined && (
         <View style={styles.diasCard}>
@@ -2600,5 +2584,32 @@ const styles = StyleSheet.create({
     color: PALETTE.preto,
     fontWeight: '500',
     lineHeight: 18,
+  },
+    // ✅ ESTILOS DO LOCAL DE DEPÓSITO
+  depositoOptions: { 
+    flexDirection: 'column', 
+    gap: 8 
+  },
+  depositoBtn: { 
+    padding: 14, 
+    backgroundColor: PALETTE.cinzaClaro2, 
+    borderRadius: 10, 
+    borderWidth: 1, 
+    borderColor: PALETTE.cinzaClaro, 
+    alignItems: 'center' 
+  },
+  depositoBtnActive: { 
+    backgroundColor: PALETTE.verdeClaro2, 
+    borderColor: PALETTE.verdePrimario, 
+    borderWidth: 2 
+  },
+  depositoBtnText: { 
+    fontSize: 14, 
+    color: PALETTE.cinza, 
+    fontWeight: '600' 
+  },
+  depositoBtnTextActive: { 
+    color: PALETTE.verdePrimario, 
+    fontWeight: '700' 
   },
 });
