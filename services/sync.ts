@@ -35,34 +35,45 @@ export const syncService = {
       if (result.sucesso && result.dados) {
         
         // 1. MATERIAIS
-               // 1. MATERIAIS
         if (result.dados.materiais?.length > 0) {
           const materiaisFormatados = result.dados.materiais.map((m: any) => ({
             id: m.id,
-            data: m.data,
-            tipoMaterial: m.tipomaterial,
+            data: m.data || '',
+            tipoMaterial: m.tipomaterial || 'Biossólido', // Proteção contra null
             numeroMTR: m.numeromtr || '',
-            peso: String(m.peso),
-            origem: m.origem,
-            destino: m.destino || 'patio' // ✅ ADICIONAMOS ESTA LINHA AQUI!
+            peso: String(m.peso || '0'),
+            origem: m.origem || 'Não informada', // Proteção contra null
+            destino: m.destino || 'patio'
           }));
           await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(materiaisFormatados));
         }
-      
 
-        // 2. LEIRAS
-        if (result.dados.leiras.length > 0) {
-          const leirasFormatadas = result.dados.leiras.map((l: any) => ({
-            id: l.id,
-            numeroLeira: l.numero_leira || l.numeroLeira,
-            lote: l.lote,
-            dataFormacao: l.data_formacao || l.dataFormacao,
-            biossólidos: typeof l.biossolidos === 'string' ? JSON.parse(l.biossolidos) : (l.biossolidos || []),
-            bagaço: l.bagaco || l.bagaço || 12,
-            status: l.status,
-            totalBiossólido: l.total_biossolido || l.totalBiossólido,
-            temperature: l.temperature
-          }));
+        // 2. LEIRAS + MTRs (BLINDADO)
+        if (result.dados.leiras?.length > 0) {
+          const leirasFormatadas = result.dados.leiras.map((l: any) => {
+            
+            const mtrsDaLeira = (result.dados.leiraMtrs || []).filter((mtr: any) => mtr.leira_id === l.id);
+            
+            const biossolidosFormatados = mtrsDaLeira.map((mtr: any) => ({
+              id: mtr.id,
+              data: mtr.criado_em ? new Date(mtr.criado_em).toLocaleDateString('pt-BR') : '',
+              numeroMTR: mtr.numero_mtr || '',
+              peso: String(mtr.peso || '0'),
+              origem: mtr.origem || 'Não informada', // Proteção contra null
+              tipoMaterial: mtr.tipo_material || 'Biossólido' // Proteção contra null
+            }));
+
+            return {
+              id: l.id,
+              numeroLeira: l.numeroleira || 0,
+              lote: l.lote || 'Sem Lote',
+              dataFormacao: l.dataformacao || '',
+              biossólidos: biossolidosFormatados,
+              bagaço: Number(l.bagaço) || 12,
+              status: l.status || 'formada', // 🔥 AQUI ESTAVA O MAIOR RISCO DE QUEBRAR A TELA
+              totalBiossólido: Number(l.totalbiossólido) || 0
+            };
+          });
           await AsyncStorage.setItem('leirasFormadas', JSON.stringify(leirasFormatadas));
         }
 
