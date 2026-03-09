@@ -35,18 +35,20 @@ export const syncService = {
       if (result.sucesso && result.dados) {
         
         // 1. MATERIAIS
-                // 1. MATERIAIS
+               // 1. MATERIAIS
         if (result.dados.materiais?.length > 0) {
           const materiaisFormatados = result.dados.materiais.map((m: any) => ({
             id: m.id,
             data: m.data,
-            tipoMaterial: m.tipomaterial, // Nome exato do banco
-            numeroMTR: m.numeromtr || '', // Nome exato do banco
+            tipoMaterial: m.tipomaterial,
+            numeroMTR: m.numeromtr || '',
             peso: String(m.peso),
-            origem: m.origem
+            origem: m.origem,
+            destino: m.destino || 'patio' // ✅ ADICIONAMOS ESTA LINHA AQUI!
           }));
           await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(materiaisFormatados));
         }
+      
 
         // 2. LEIRAS
         if (result.dados.leiras.length > 0) {
