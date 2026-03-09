@@ -19,6 +19,118 @@ export const syncService = {
     }
   },
 
+  // 🔥 NOVA FUNÇÃO: RESTAURAR DADOS DO SERVIDOR (BACKUP)
+  async restaurarDadosDoServidor(): Promise<boolean> {
+    try {
+      console.log('🔄 Iniciando restauração de dados do servidor...');
+      const netlifyUrl = process.env.EXPO_PUBLIC_NETLIFY_URL || 'http://localhost:9999';
+      
+      const response = await fetch(`${netlifyUrl}/.netlify/functions/sync-pull`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const result = await response.json();
+
+      if (result.sucesso && result.dados) {
+        
+        // 1. MATERIAIS
+        if (result.dados.materiais.length > 0) {
+          const materiaisFormatados = result.dados.materiais.map((m: any) => ({
+            id: m.id,
+            data: m.data,
+            tipoMaterial: m.tipo_material || m.tipoMaterial,
+            numeroMTR: m.numero_mtr || m.numeroMTR || '',
+            peso: String(m.peso), // App usa string
+            origem: m.origem
+          }));
+          await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(materiaisFormatados));
+        }
+
+        // 2. LEIRAS
+        if (result.dados.leiras.length > 0) {
+          const leirasFormatadas = result.dados.leiras.map((l: any) => ({
+            id: l.id,
+            numeroLeira: l.numero_leira || l.numeroLeira,
+            lote: l.lote,
+            dataFormacao: l.data_formacao || l.dataFormacao,
+            biossólidos: typeof l.biossolidos === 'string' ? JSON.parse(l.biossolidos) : (l.biossolidos || []),
+            bagaço: l.bagaco || l.bagaço || 12,
+            status: l.status,
+            totalBiossólido: l.total_biossolido || l.totalBiossólido,
+            temperature: l.temperature
+          }));
+          await AsyncStorage.setItem('leirasFormadas', JSON.stringify(leirasFormatadas));
+        }
+
+        // 3. MONITORAMENTOS
+        if (result.dados.monitoramentos.length > 0) {
+          const monitoramentosFormatados = result.dados.monitoramentos.map((m: any) => {
+            const temperaturas = [];
+            if (m.temperatura_topo !== null) temperaturas.push({ ponto: 'topo', temperatura: Number(m.temperatura_topo) });
+            if (m.temperatura_meio !== null) temperaturas.push({ ponto: 'meio', temperatura: Number(m.temperatura_meio) });
+            if (m.temperatura_fundo !== null) temperaturas.push({ ponto: 'fundo', temperatura: Number(m.temperatura_fundo) });
+
+            return {
+              id: m.id,
+              leiraId: m.leiraid,
+              data: m.data,
+              hora: m.hora,
+              temperaturas: temperaturas,
+              revolveu: m.revolveu,
+              observacoes: m.observacoes,
+              statusNovo: m.status,
+              localDeposito: m.local_deposito,
+              volumeOriginal: m.volume_original,
+              volumeFinal: m.volume_final,
+              diasDesdeFormacao: m.dias_desde_formacao,
+              timestamp: m.criado_em ? new Date(m.criado_em).getTime() : Date.now()
+            };
+          });
+          await AsyncStorage.setItem('leirasMonitoramento', JSON.stringify(monitoramentosFormatados));
+        }
+
+        // 4. ENRIQUECIMENTOS
+        if (result.dados.enriquecimentos.length > 0) {
+          const enriquecimentosFormatados = result.dados.enriquecimentos.map((e: any) => ({
+            id: e.id,
+            leiraId: e.leiraid || e.leiraId,
+            dataEnriquecimento: e.data_enriquecimento || e.dataEnriquecimento,
+            horaEnriquecimento: e.hora_enriquecimento || e.horaEnriquecimento,
+            pesoAdicionado: Number(e.peso_adicionado || e.pesoAdicionado),
+            numeroMTR: e.numero_mtr || e.numeroMTR,
+            origem: e.origem,
+            observacoes: e.observacoes,
+            pesoAnterior: Number(e.peso_anterior || e.pesoAnterior || 0),
+            pesoNovo: Number(e.peso_novo || e.pesoNovo || 0),
+            timestamp: e.criado_em ? new Date(e.criado_em).getTime() : Date.now()
+          }));
+          await AsyncStorage.setItem('leirasEnriquecimentos', JSON.stringify(enriquecimentosFormatados));
+        }
+
+        // 5. CLIMA
+        if (result.dados.clima.length > 0) {
+          const climaFormatado = result.dados.clima.map((c: any) => ({
+            id: c.id,
+            leiraId: c.leiraid || c.leiraId,
+            data: c.data,
+            precipitacao: Number(c.precipitacao),
+            observacao: c.observacao,
+            timestamp: c.criado_em ? new Date(c.criado_em).getTime() : Date.now()
+          }));
+          await AsyncStorage.setItem('leirasClimatica', JSON.stringify(climaFormatado));
+        }
+
+        console.log('🎉 RESTAURAÇÃO TOTAL CONCLUÍDA COM SUCESSO!');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('❌ Erro crítico ao restaurar dados:', error);
+      return false;
+    }
+  },
+
   // ===== OBTER OPERADOR LOGADO =====
   async obterOperadorLogado(): Promise<any> {
     try {
@@ -51,7 +163,6 @@ export const syncService = {
       const fila = await AsyncStorage.getItem('filaSync') || '[]';
       const filaArray: SyncQueue[] = JSON.parse(fila);
 
-      // Adiciona timestamp para garantir ordem
       filaArray.push({ tipo, dados, timestamp: Date.now(), tentativas: 0 });
 
       await AsyncStorage.setItem('filaSync', JSON.stringify(filaArray));
@@ -82,16 +193,8 @@ export const syncService = {
 
       console.log(`🔄 Sincronizando ${filaArray.length} itens...`);
 
-      // 🔥 CORREÇÃO CRÍTICA AQUI:
-      // Garantimos que o campo 'deletado' seja preservado explicitamente
       const grupos = {
-        material: filaArray
-          .filter(f => f.tipo === 'material')
-          .map(f => ({
-            ...f.dados,
-            deletado: f.dados.deletado === true // Força o booleano
-          })),
-        
+        material: filaArray.filter(f => f.tipo === 'material').map(f => ({...f.dados, deletado: f.dados.deletado === true})),
         leira: filaArray.filter(f => f.tipo === 'leira').map(f => f.dados),
         monitoramento: filaArray.filter(f => f.tipo === 'monitoramento').map(f => f.dados),
         clima: filaArray.filter(f => f.tipo === 'clima').map(f => f.dados),
@@ -102,11 +205,7 @@ export const syncService = {
 
       let erros = 0;
 
-      // Execução Sequencial
-      if (grupos.material.length) {
-        await this.sincronizarGenerico('sync-materiais', { materiais: grupos.material }, operador).catch(() => erros++);
-      }
-      
+      if (grupos.material.length) await this.sincronizarGenerico('sync-materiais', { materiais: grupos.material }, operador).catch(() => erros++);
       if (grupos.leira.length) await this.sincronizarGenerico('sync-leiras', { leiras: grupos.leira }, operador).catch(() => erros++);
       if (grupos.monitoramento.length) await this.sincronizarGenerico('sync-monitoramento', { monitoramentos: grupos.monitoramento }, operador).catch(() => erros++);
       
@@ -117,7 +216,6 @@ export const syncService = {
 
       if (grupos.enriquecimento.length) await this.sincronizarGenerico('sync-enriquecimento', { enriquecimentos: grupos.enriquecimento }, operador).catch(() => erros++);
 
-      // DELEÇÕES ESPECÍFICAS (Leiras e Clima usam rota separada, Materiais usam a rota principal acima)
       if (grupos.leira_deletada.length) await this.sincronizarDelecoes('leiras', grupos.leira_deletada, operador).catch(() => erros++);
       if (grupos.clima_deletado.length) await this.sincronizarDelecoes('clima', grupos.clima_deletado, operador).catch(() => erros++);
 
@@ -139,11 +237,6 @@ export const syncService = {
   async sincronizarGenerico(endpoint: string, body: any, operador: any): Promise<void> {
     const netlifyUrl = process.env.EXPO_PUBLIC_NETLIFY_URL || 'http://localhost:9999';
     
-    // 🕵️ DEBUG: Espião para ver o que está saindo (Olhe no terminal do Expo)
-    if (endpoint === 'sync-materiais') {
-        console.log(`🚀 [ENVIO] ${endpoint}:`, JSON.stringify(body, null, 2));
-    }
-
     const response = await fetch(`${netlifyUrl}/.netlify/functions/${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -157,13 +250,11 @@ export const syncService = {
     }
   },
 
-  // ===== FUNÇÃO DE DELEÇÃO (Para Leiras e Clima) =====
+  // ===== FUNÇÃO DE DELEÇÃO =====
   async sincronizarDelecoes(tabela: string, itens: any[], operador: any): Promise<void> {
     try {
       const netlifyUrl = process.env.EXPO_PUBLIC_NETLIFY_URL || 'http://localhost:9999';
       const fullUrl = `${netlifyUrl}/.netlify/functions/sync-delete`;
-
-      console.log(`🗑️ Enviando ${itens.length} itens para deletar da tabela ${tabela}...`);
 
       const response = await fetch(fullUrl, {
         method: 'POST',
@@ -173,26 +264,12 @@ export const syncService = {
 
       const responseText = await response.text();
       let result;
-      
-      try {
-        result = JSON.parse(responseText);
-      } catch (e) {
-        console.warn(`⚠️ Resposta inválida do servidor ao deletar: ${responseText}`);
-        return; 
-      }
+      try { result = JSON.parse(responseText); } catch (e) { return; }
 
-      if (!response.ok) {
-        console.warn(`⚠️ Erro no servidor: ${result.erro || result.message}`);
-        return;
-      }
-
-      console.log(`✅ Sucesso! ${result.deletados} itens deletados.`);
+      if (!response.ok) return;
 
     } catch (error) {
-      console.error(`❌ Erro de conexão ao deletar ${tabela}:`, error);
-      if (String(error).includes('Network request failed')) {
-        throw error;
-      }
+      if (String(error).includes('Network request failed')) throw error;
     }
   }
 };

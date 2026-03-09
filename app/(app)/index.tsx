@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { authService } from '@/services/auth';
-import { sincronizarAgora, obterTamanhoFila } from '@/services/background-sync';
+import { syncService } from '@/services/sync'; // ✅ Importação atualizada
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PALETTE = {
@@ -96,7 +96,7 @@ export default function DashboardScreen() {
       }
 
       // ===== CARREGAR TAMANHO DA FILA =====
-      const tamanho = await obterTamanhoFila();
+      const tamanho = await syncService.obterTamanhoFila(); // ✅ Atualizado
       setTamanhoFila(tamanho);
       console.log(`📦 Fila de sincronização: ${tamanho} itens`);
 
@@ -119,13 +119,13 @@ export default function DashboardScreen() {
     }, [])
   );
 
-  // ===== SINCRONIZAR MANUALMENTE =====
+  // ===== SINCRONIZAR MANUALMENTE (PUSH) =====
   const handleSincronizarAgora = async () => {
     try {
       setSincronizando(true);
       console.log('🔄 Sincronizando manualmente...');
 
-      const sucesso = await sincronizarAgora();
+      const sucesso = await syncService.sincronizar(); // ✅ Atualizado
 
       if (sucesso) {
         Alert.alert('✅ Sucesso', 'Dados sincronizados com sucesso!');
@@ -138,7 +138,7 @@ export default function DashboardScreen() {
         // Recarregar dados
         await carregarTotalLeiras();
       } else {
-        Alert.alert('⚠️ Aviso', 'Não há itens para sincronizar ou erro na conexão');
+        Alert.alert('⚠️ Aviso', 'Não há itens para sincronizar ou ocorreu um erro na conexão');
       }
     } catch (error) {
       console.error('❌ Erro ao sincronizar:', error);
@@ -146,6 +146,39 @@ export default function DashboardScreen() {
     } finally {
       setSincronizando(false);
     }
+  };
+
+  // ===== RESTAURAR DADOS (PULL) =====
+  const handleRestaurarDados = async () => {
+    Alert.alert(
+      '📥 Baixar Dados',
+      'Isso vai puxar todo o histórico do servidor para este celular. Deseja continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Baixar',
+          onPress: async () => {
+            try {
+              setSincronizando(true);
+              console.log('📥 Iniciando download de dados...');
+              
+              const sucesso = await syncService.restaurarDadosDoServidor();
+              
+              if (sucesso) {
+                Alert.alert('✅ Sucesso', 'Todos os dados foram restaurados!');
+                await carregarTotalLeiras(); // Atualiza a tela na hora
+              } else {
+                Alert.alert('❌ Erro', 'Não foi possível baixar os dados. Verifique a internet.');
+              }
+            } catch (error) {
+              Alert.alert('❌ Erro', 'Falha na comunicação com o servidor.');
+            } finally {
+              setSincronizando(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   // ===== FUNÇÃO DE RESET =====
@@ -169,6 +202,7 @@ export default function DashboardScreen() {
               await AsyncStorage.removeItem('leirasFormadas');
               await AsyncStorage.removeItem('leirasMonitoramento');
               await AsyncStorage.removeItem('leirasClimatica');
+              await AsyncStorage.removeItem('leirasEnriquecimentos');
               await AsyncStorage.removeItem('filaSync');
               await AsyncStorage.removeItem('ultimaSincronizacao');
 
@@ -189,7 +223,6 @@ export default function DashboardScreen() {
   };
 
   // ===== FUNÇÃO DE LOGOUT =====
-    // ===== FUNÇÃO DE LOGOUT =====
   const handleLogout = () => {
     Alert.alert(
       'Desconectar',
@@ -204,9 +237,6 @@ export default function DashboardScreen() {
           text: 'Sair',
           onPress: async () => {
             try {
-              // ❌ REMOVI A LINHA: await authService.removePIN();
-              // Agora o PIN continua salvo, e o usuário só precisa digitá-lo novamente.
-              
               router.replace('/(auth)/login');
             } catch (error) {
               Alert.alert('Erro', 'Erro ao desconectar');
@@ -316,13 +346,26 @@ export default function DashboardScreen() {
                 {tamanhoFila > 0 ? `${tamanhoFila} itens pendentes` : '✅ Tudo sincronizado'}
               </Text>
             </View>
+            
+            {/* Botão de Enviar (Push) */}
             <TouchableOpacity
               style={[styles.syncButton, sincronizando && styles.syncButtonDisabled]}
               onPress={handleSincronizarAgora}
               disabled={sincronizando}
             >
               <Text style={styles.syncButtonText}>
-                {sincronizando ? '⏳ Sincronizando...' : '🔄 Sincronizar Agora'}
+                {sincronizando ? '⏳ Processando...' : '📤 Enviar para Servidor'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* ✅ NOVO: Botão de Baixar (Pull) */}
+            <TouchableOpacity
+              style={[styles.pullButton, sincronizando && styles.syncButtonDisabled]}
+              onPress={handleRestaurarDados}
+              disabled={sincronizando}
+            >
+              <Text style={styles.pullButtonText}>
+                📥 Baixar do Servidor (Restore)
               </Text>
             </TouchableOpacity>
           </View>
@@ -355,7 +398,7 @@ export default function DashboardScreen() {
             <ActionCard
               icon="📋"
               title="Monitoramento"
-              onPress={() => router.push('/(app)/selecionar-leira')}  // ✅ CORRIGIDO
+              onPress={() => router.push('/(app)/selecionar-leira')}
             />
             <ActionCard
               icon="🌧️"
@@ -627,6 +670,20 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   syncButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: PALETTE.branco,
+  },
+  pullButton: {
+    backgroundColor: '#2196F3', // Azul para diferenciar
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  pullButtonText: {
     fontSize: 13,
     fontWeight: '700',
     color: PALETTE.branco,
