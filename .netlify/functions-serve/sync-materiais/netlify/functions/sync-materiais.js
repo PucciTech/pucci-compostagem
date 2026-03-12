@@ -12816,10 +12816,11 @@ var handler = async (event) => {
         peso: material.peso,
         origem: material.origem,
         destino: destinoFinal,
+        usado: material.usado || false,
+        // 🔥 2. ADICIONADO AQUI (Se não vier nada, salva como false)
         // Campos de controle
         sincronizado: true,
         sincronizado_em: agora,
-        // criado_em: NÃO ATUALIZAR (deixe o banco manter o original se já existir)
         atualizado_em: agora
       }, { onConflict: "id" });
       if (!error) sincronizados++;

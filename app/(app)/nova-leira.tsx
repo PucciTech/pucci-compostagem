@@ -163,11 +163,62 @@ export default function NovaLeiraScreen() {
     }, [])
   );
 
-  const loadData = async () => {
+    const loadData = async () => {
     try {
       setLoading(true);
 
-      // --- LÓGICA DE DESTINOS/PISCINÕES (MANTIDA INTACTA) ---
+      // 
+      // 1. CARREGAR MATERIAIS (100% LOCAL)
+      // 
+      const materiaisRegistrados = await AsyncStorage.getItem('materiaisRegistrados');
+      const materiais = materiaisRegistrados ? JSON.parse(materiaisRegistrados) : [];
+
+      const biossolidosDisponiveis = materiais.filter((item: any) => {
+        const tipo = item.tipoMaterial ? item.tipoMaterial.toLowerCase() : '';
+        const origem = item.origem ? item.origem.toLowerCase() : '';
+        const destino = item.destino ? item.destino.toLowerCase() : '';
+        const mtr = item.numeroMTR ? item.numeroMTR.toLowerCase() : '';
+
+        const ehBiossolido = tipo.includes('bio') || tipo.includes('lodo');
+        
+        const ehPiscinao =
+          destino.includes('piscin') ||
+          destino.includes('estoque') ||
+          origem.includes('piscin') ||
+          origem.includes('manual') ||
+          tipo.includes('piscin') ||
+          mtr.includes('manual');
+
+        // 🔥 REGRA NOVA: Só traz o material se ele AINDA NÃO FOI USADO
+        const naoFoiUsado = !item.usado;
+
+        // Retorna apenas se for biossólido, não for de piscinão e NÃO ESTIVER USADO
+        return ehBiossolido && !ehPiscinao && naoFoiUsado;
+      });
+
+      // Ordena os disponíveis (mais novos no topo)
+      const biossolidosOrdenados = biossolidosDisponiveis.sort((a: any, b: any) => Number(b.id) - Number(a.id));
+      
+      // Atualiza a tela com os materiais filtrados
+      setBiossólidos(biossolidosOrdenados);
+
+      // 
+      // 2. CARREGAR LEIRAS PARA A LISTA INFERIOR (Apenas ativas)
+      // 
+      const leirasRegistradas = await AsyncStorage.getItem('leirasFormadas');
+      const leirasData = leirasRegistradas ? JSON.parse(leirasRegistradas) : [];
+
+      const leirasAtivas = leirasData.filter((l: any) => {
+        const status = l.status?.toLowerCase() || '';
+        return !['arquivada', 'finalizada'].includes(status);
+      });
+     
+      const leirasOrdenadas = leirasAtivas.sort((a: any, b: any) => Number(b.id) - Number(a.id));
+      setLeiras(leirasOrdenadas);
+
+      // 
+      // 3. LÓGICA DE DESTINOS/PISCINÕES
+      // 
       const destinosSalvos = await AsyncStorage.getItem('listaDestinos');
       if (destinosSalvos) {
         const todos = JSON.parse(destinosSalvos);
@@ -185,55 +236,6 @@ export default function NovaLeiraScreen() {
           }
         }
       }
-
-      // --- 1. CARREGAR E FILTRAR MATERIAIS (Apenas os 5 mais recentes) ---
-      const materiaisRegistrados = await AsyncStorage.getItem('materiaisRegistrados');
-      const materiais = materiaisRegistrados ? JSON.parse(materiaisRegistrados) : [];
-
-      const biossólidosCarregados = materiais.filter((item: any) => {
-        const tipo = item.tipoMaterial ? item.tipoMaterial.toLowerCase() : '';
-        const origem = item.origem ? item.origem.toLowerCase() : '';
-        const destino = item.destino ? item.destino.toLowerCase() : '';
-        const mtr = item.numeroMTR ? item.numeroMTR.toLowerCase() : '';
-
-        const ehBiossolido = tipo.includes('bio') || tipo.includes('lodo');
-
-        const ehPiscinao =
-          destino.includes('piscin') ||
-          destino.includes('estoque') ||
-          origem.includes('piscin') ||
-          origem.includes('manual') ||
-          tipo.includes('piscin') ||
-          mtr.includes('manual');
-
-        return ehBiossolido && !ehPiscinao;
-      });
-
-      // 🔥 MUDANÇA AQUI: Ordena pelo ID (mais novos primeiro) e pega só os 5 primeiros
-      const biossolidosRecentes = biossólidosCarregados
-        .sort((a: any, b: any) => Number(b.id) - Number(a.id))
-        .slice(0, 5);
-
-      setBiossólidos(biossolidosRecentes);
-
-      // --- 2. CARREGAR E FILTRAR LEIRAS (Ignorar arquivadas e finalizadas) ---
-      const leirasRegistradas = await AsyncStorage.getItem('leirasFormadas');
-      const leirasData = leirasRegistradas ? JSON.parse(leirasRegistradas) : [];
-
-      // 🔥 MUDANÇA AQUI: Filtra apenas as leiras ativas no pátio
-      const leirasAtivas = leirasData.filter((l: any) => {
-        const status = l.status?.toLowerCase() || '';
-        return !['arquivada', 'finalizada'].includes(status);
-      });
-     
-      // Ordena as leiras ativas para mostrar as mais recentes primeiro
-      const leirasOrdenadas = leirasAtivas.sort((a: any, b: any) => {
-        const dataA = new Date(a.dataFormacao.split('/').reverse().join('-')).getTime();
-        const dataB = new Date(b.dataFormacao.split('/').reverse().join('-')).getTime();
-        return dataB - dataA;
-      });
-
-      setLeiras(leirasOrdenadas);
 
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível carregar os dados');
