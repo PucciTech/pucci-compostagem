@@ -1,35 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   RefreshControl,
+  Alert,
+  Platform,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { authService } from '@/services/auth';
-import { syncService } from '@/services/sync'; // ✅ Importação atualizada
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { syncService } from '@/services/sync';
 
+// ===== NOVO DESIGN SYSTEM (PALETA REFINADA) =====
 const PALETTE = {
-  verdePrimario: '#5D7261',
-  verdeClaro: '#F0F5F0',
-  verdeClaro2: '#E8F0E8',
-  verdeHover: '#4F6154',
-  verdeSuave: '#7A8A7E',
-  terracota: '#B16338',
-  terracotaClaro: '#F5E8E0',
+  verdePrimario: '#2E4F36', 
+  verdeClaro: '#F4F7F4', 
+  verdeCard: '#E8EFE9', 
+  terracota: '#B16338', 
+  terracotaClaro: '#FDF3EE', 
   branco: '#FFFFFF',
-  preto: '#1A1A1A',
-  cinza: '#666666',
-  cinzaClaro: '#EEEEEE',
-  cinzaClaro2: '#F5F5F5',
-  erro: '#D32F2F',
-  sucesso: '#4CAF50',
-  warning: '#FF9800',
+  preto: '#1A2B22', 
+  cinza: '#6B7A71', 
+  cinzaClaro: '#E1E8E3', 
+  erro: '#DC3545',
+  erroClaro: '#FCEAEA',
+  sucesso: '#28A745',
+  sucessoClaro: '#EAF6EC',
+  warning: '#EAB308',
+  warningClaro: '#FEF5E7',
+  info: '#0D6EFD',
+  infoClaro: '#E7F1FF',
+  azulPiscinao: '#0D6EFD',
 };
 
 export default function DashboardScreen() {
@@ -53,68 +59,50 @@ export default function DashboardScreen() {
   // ===== FUNÇÃO DE CARREGAMENTO =====
   const carregarTotalLeiras = async () => {
     try {
-      console.log('🔄 Carregando estatísticas do dashboard...');
-
       const leirasData = await AsyncStorage.getItem('leirasFormadas');
       if (leirasData) {
         const leiras = JSON.parse(leirasData);
-        console.log(`📊 Total de leiras encontradas: ${leiras.length}`);
+        
+        // 🔥 FILTRO: Apenas leiras que ESTÃO NO PÁTIO (ignora arquivada e finalizada)
+        const leirasAtivas = leiras.filter((l: any) => {
+          const status = l.status?.toLowerCase() || '';
+          return !['arquivada', 'finalizada'].includes(status);
+        });
 
-        // Calcular estatísticas por status
-        const formadas = leiras.filter((l: any) => l.status === 'formada').length;
-        const secando = leiras.filter((l: any) => l.status === 'secando').length;
-        const compostando = leiras.filter((l: any) => l.status === 'compostando').length;
-        const maturando = leiras.filter((l: any) => l.status === 'maturando').length;
-        const prontas = leiras.filter((l: any) => l.status === 'pronta').length;
-
-        // Leiras em produção (formação até maturação)
+        const formadas = leirasAtivas.filter((l: any) => l.status === 'formada').length;
+        const secando = leirasAtivas.filter((l: any) => l.status === 'secando').length;
+        const compostando = leirasAtivas.filter((l: any) => l.status === 'compostando').length;
+        const maturando = leirasAtivas.filter((l: any) => l.status === 'maturando').length;
+        const prontas = leirasAtivas.filter((l: any) => l.status === 'pronta').length;
         const emProducao = formadas + secando + compostando + maturando;
 
-        // Atualizar todos os estados
-        setTotalLeiras(leiras.length);
+        setTotalLeiras(leirasAtivas.length);
         setLeirasProntas(prontas);
         setLeirasEmProducao(emProducao);
         setLeirasFormadas(formadas);
         setLeirasSecando(secando);
         setLeirasCompostando(compostando);
         setLeirasMaturando(maturando);
-
-        console.log('✅ Estatísticas carregadas:');
-        console.log(`   📊 Total: ${leiras.length}`);
-        console.log(`   ✅ Prontas para Venda: ${prontas}`);
-        console.log(`   🔄 Em Produção: ${emProducao}`);
       } else {
-        console.log('📭 Nenhuma leira encontrada no AsyncStorage');
-        // Reset todos os valores
-        setTotalLeiras(0);
-        setLeirasProntas(0);
-        setLeirasEmProducao(0);
-        setLeirasFormadas(0);
-        setLeirasSecando(0);
-        setLeirasCompostando(0);
-        setLeirasMaturando(0);
+        setTotalLeiras(0); setLeirasProntas(0); setLeirasEmProducao(0);
+        setLeirasFormadas(0); setLeirasSecando(0); setLeirasCompostando(0); setLeirasMaturando(0);
       }
 
-      // ===== CARREGAR TAMANHO DA FILA =====
-      const tamanho = await syncService.obterTamanhoFila(); // ✅ Atualizado
+      // Status da Fila
+      const tamanho = await syncService.obterTamanhoFila();
       setTamanhoFila(tamanho);
-      console.log(`📦 Fila de sincronização: ${tamanho} itens`);
 
-      // ===== CARREGAR ÚLTIMA SINCRONIZAÇÃO =====
+      // Última Sincronização
       const ultimoSync = await AsyncStorage.getItem('ultimaSincronizacao');
-      if (ultimoSync) {
-        setUltimaSincronizacao(ultimoSync);
-      } else {
-        setUltimaSincronizacao('Nunca');
-      }
+      setUltimaSincronizacao(ultimoSync || 'Nunca');
+
     } catch (error) {
       console.error('❌ Erro ao carregar dashboard:', error);
     }
   };
 
-  // ===== CARREGA DADOS AO FOCAR NA TELA =====
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       carregarTotalLeiras();
     }, [])
   );
@@ -123,26 +111,18 @@ export default function DashboardScreen() {
   const handleSincronizarAgora = async () => {
     try {
       setSincronizando(true);
-      console.log('🔄 Sincronizando manualmente...');
-
-      const sucesso = await syncService.sincronizar(); // ✅ Atualizado
-
+      const sucesso = await syncService.sincronizar();
       if (sucesso) {
-        Alert.alert('✅ Sucesso', 'Dados sincronizados com sucesso!');
-
-        // Atualizar timestamp
-        const agora = new Date().toLocaleTimeString('pt-BR');
+        Alert.alert('Sucesso', 'Dados enviados com sucesso!');
+        const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         setUltimaSincronizacao(agora);
         await AsyncStorage.setItem('ultimaSincronizacao', agora);
-
-        // Recarregar dados
         await carregarTotalLeiras();
       } else {
-        Alert.alert('⚠️ Aviso', 'Não há itens para sincronizar ou ocorreu um erro na conexão');
+        Alert.alert('Aviso', 'Não há itens para sincronizar ou ocorreu um erro na conexão');
       }
     } catch (error) {
-      console.error('❌ Erro ao sincronizar:', error);
-      Alert.alert('❌ Erro', 'Erro ao sincronizar dados');
+      Alert.alert('Erro', 'Erro ao sincronizar dados');
     } finally {
       setSincronizando(false);
     }
@@ -151,8 +131,8 @@ export default function DashboardScreen() {
   // ===== RESTAURAR DADOS (PULL) =====
   const handleRestaurarDados = async () => {
     Alert.alert(
-      '📥 Baixar Dados',
-      'Isso vai puxar todo o histórico do servidor para este celular. Deseja continuar?',
+      'Baixar Dados',
+      'Isso vai atualizar o celular com os dados mais recentes do servidor. Deseja continuar?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -160,18 +140,15 @@ export default function DashboardScreen() {
           onPress: async () => {
             try {
               setSincronizando(true);
-              console.log('📥 Iniciando download de dados...');
-              
               const sucesso = await syncService.restaurarDadosDoServidor();
-              
               if (sucesso) {
-                Alert.alert('✅ Sucesso', 'Todos os dados foram restaurados!');
-                await carregarTotalLeiras(); // Atualiza a tela na hora
+                Alert.alert('Sucesso', 'Dados restaurados com sucesso!');
+                await carregarTotalLeiras();
               } else {
-                Alert.alert('❌ Erro', 'Não foi possível baixar os dados. Verifique a internet.');
+                Alert.alert('Erro', 'Não foi possível baixar os dados. Verifique a internet.');
               }
             } catch (error) {
-              Alert.alert('❌ Erro', 'Falha na comunicação com o servidor.');
+              Alert.alert('Erro', 'Falha na comunicação com o servidor.');
             } finally {
               setSincronizando(false);
             }
@@ -181,622 +158,331 @@ export default function DashboardScreen() {
     );
   };
 
-  // ===== FUNÇÃO DE RESET =====
+  // ===== FUNÇÕES DE RESET E LOGOUT =====
   const handleReset = () => {
     Alert.alert(
-      '⚠️ Resetar App',
-      'Isso vai deletar TODOS os dados locais. Tem certeza?',
+      '⚠️ ATENÇÃO: Limpar Dados', 
+      'Isso vai deletar TODOS os dados locais. Essa ação NÃO pode ser desfeita. Tem certeza?', 
       [
-        {
-          text: 'Cancelar',
-          onPress: () => { },
-          style: 'cancel',
-        },
+        { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Deletar Tudo',
-          onPress: async () => {
-            try {
-              console.log('🗑️ Limpando dados...');
-
-              await AsyncStorage.removeItem('materiaisRegistrados');
-              await AsyncStorage.removeItem('leirasFormadas');
-              await AsyncStorage.removeItem('leirasMonitoramento');
-              await AsyncStorage.removeItem('leirasClimatica');
-              await AsyncStorage.removeItem('leirasEnriquecimentos');
-              await AsyncStorage.removeItem('filaSync');
-              await AsyncStorage.removeItem('ultimaSincronizacao');
-
-              console.log('✅ Dados deletados com sucesso!');
-              Alert.alert('Sucesso', 'App resetado! Reinicie o app para ver as mudanças.');
-
-              // Recarregar a tela
-              carregarTotalLeiras();
-            } catch (error) {
-              console.error('❌ Erro ao resetar:', error);
-              Alert.alert('Erro', 'Falha ao resetar dados');
-            }
-          },
           style: 'destructive',
+          onPress: async () => {
+            await AsyncStorage.multiRemove([
+              'materiaisRegistrados', 'leirasFormadas', 'leirasMonitoramento',
+              'leirasClimatica', 'leirasEnriquecimentos', 'filaSync', 'ultimaSincronizacao', 'fila_sincronizacao'
+            ]);
+            Alert.alert('Sucesso', 'App resetado!');
+            carregarTotalLeiras();
+          },
         },
       ]
     );
   };
 
-  // ===== FUNÇÃO DE LOGOUT =====
   const handleLogout = () => {
-    Alert.alert(
-      'Desconectar',
-      'Tem certeza que deseja sair do sistema?',
-      [
-        {
-          text: 'Cancelar',
-          onPress: () => { },
-          style: 'cancel',
-        },
-        {
-          text: 'Sair',
-          onPress: async () => {
-            try {
-              router.replace('/(auth)/login');
-            } catch (error) {
-              Alert.alert('Erro', 'Erro ao desconectar');
-            }
-          },
-          style: 'destructive',
-        },
-      ]
-    );
+    Alert.alert('Desconectar', 'Deseja sair do sistema?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { 
+        text: 'Sair', 
+        style: 'destructive', 
+        onPress: async () => {
+          try {
+            // 1. Remove o token de acesso
+            await AsyncStorage.removeItem('userToken');
+            
+            // 2. Força o redirecionamento. 
+            // Tente '/(auth)' primeiro. Se não for, mude para '/(auth)/login' ou '/'
+            router.replace('/(auth)/login'); 
+            
+          } catch (error) {
+            console.error('Erro ao fazer logout:', error);
+            Alert.alert('Erro', 'Não foi possível desconectar. Tente novamente.');
+          }
+        } 
+      },
+    ]);
   };
 
-  // ===== FUNÇÃO DE REFRESH =====
   const handleRefresh = () => {
     setRefreshing(true);
     carregarTotalLeiras();
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1500);
+    setTimeout(() => setRefreshing(false), 1000);
   };
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* ===== HEADER ===== */}
+      <View style={styles.header}>
+        <View style={styles.headerContent}>
+          <Text style={styles.greeting}>Pucci Ambiental</Text>
+          <Text style={styles.appTitle}>Campos Solo</Text>
+        </View>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <MaterialCommunityIcons name="logout" size={24} color={PALETTE.terracota} />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={PALETTE.verdePrimario}
-            title="Atualizando..."
-            titleColor={PALETTE.verdePrimario}
-          />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={PALETTE.verdePrimario} />}
       >
-        {/* ===== HEADER ===== */}
-        <View style={styles.header}>
-          <View style={styles.headerContent}>
-            <Text style={styles.greeting}>Bem-vindo 👋</Text>
-            <Text style={styles.appTitle}>Campos Solo</Text>
-          </View>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Text style={styles.logoutIcon}>🚪</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* ===== STATS CARDS ===== */}
         <View style={styles.statsContainer}>
           <StatCard
-            icon="🌱"
+            icon="tractor"
             title="Total de Leiras"
             value={totalLeiras.toString()}
-            color={PALETTE.verdePrimario}
+            color={PALETTE.branco}
+            bgColor={PALETTE.verdePrimario}
           />
           <StatCard
-            icon="✅"
+            icon="check-decagram"
             title="Leiras Prontas"
             value={leirasProntas.toString()}
-            color={PALETTE.sucesso}
+            color={PALETTE.branco}
+            bgColor={PALETTE.sucesso}
           />
           <StatCard
-            icon="🔄"
+            icon="progress-clock"
             title="Em Produção"
             value={leirasEmProducao.toString()}
-            color={PALETTE.warning}
+            color={PALETTE.branco}
+            bgColor={PALETTE.terracota}
           />
         </View>
 
         {/* ===== STATS DETALHADOS ===== */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Detalhes das Leiras</Text>
+          <Text style={styles.sectionTitle}>Detalhes do Processo</Text>
           <View style={styles.detailsGrid}>
-            <DetailCard
-              icon="📦"
-              label="Formadas"
-              value={leirasFormadas.toString()}
-              color={PALETTE.cinza}
-            />
-            <DetailCard
-              icon="💨"
-              label="Secando"
-              value={leirasSecando.toString()}
-              color="#FF9800"
-            />
-            <DetailCard
-              icon="🔄"
-              label="Compostando"
-              value={leirasCompostando.toString()}
-              color="#2196F3"
-            />
-            <DetailCard
-              icon="🌱"
-              label="Maturando"
-              value={leirasMaturando.toString()}
-              color="#8BC34A"
-            />
+            <DetailCard icon="shape-outline" label="Formadas" value={leirasFormadas.toString()} color={PALETTE.terracota} />
+            <DetailCard icon="weather-windy" label="Secando" value={leirasSecando.toString()} color={PALETTE.warning} />
+            <DetailCard icon="recycle" label="Compostando" value={leirasCompostando.toString()} color={PALETTE.info} />
+            <DetailCard icon="leaf" label="Maturando" value={leirasMaturando.toString()} color={PALETTE.verdePrimario} />
           </View>
         </View>
 
         {/* ===== SINCRONIZAÇÃO ===== */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Sincronização</Text>
+          <Text style={styles.sectionTitle}>Sistema & Nuvem</Text>
           <View style={styles.syncCard}>
-            <View style={styles.syncInfo}>
-              <Text style={styles.syncLabel}>Fila de Sincronização:</Text>
-              <Text style={styles.syncValue}>
-                {tamanhoFila > 0 ? `${tamanhoFila} itens pendentes` : '✅ Tudo sincronizado'}
-              </Text>
+            <View style={styles.syncHeader}>
+              <View style={[styles.syncIconBox, { backgroundColor: tamanhoFila > 0 ? PALETTE.warningClaro : PALETTE.cinzaClaro }]}>
+                <MaterialCommunityIcons 
+                  name={tamanhoFila > 0 ? "cloud-sync" : "cloud-check"} 
+                  size={28} 
+                  color={tamanhoFila > 0 ? PALETTE.verdePrimario : PALETTE.verdePrimario} 
+                />
+              </View>
+              <View style={styles.syncInfo}>
+                <Text style={styles.syncLabel}>Status da Fila</Text>
+                <Text style={[styles.syncValue, tamanhoFila > 0 ? { color: PALETTE.warning } : { color: PALETTE.verdePrimario }]}>
+                  {tamanhoFila > 0 ? `${tamanhoFila} registros pendentes` : 'Tudo sincronizado'}
+                </Text>
+              </View>
             </View>
             
-            {/* Botão de Enviar (Push) */}
-            <TouchableOpacity
-              style={[styles.syncButton, sincronizando && styles.syncButtonDisabled]}
-              onPress={handleSincronizarAgora}
-              disabled={sincronizando}
-            >
-              <Text style={styles.syncButtonText}>
-                {sincronizando ? '⏳ Processando...' : '📤 Enviar para Servidor'}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.syncButtonsRow}>
+              <TouchableOpacity 
+                style={[styles.btnSyncPush, sincronizando && styles.btnDisabled]} 
+                onPress={handleSincronizarAgora} 
+                disabled={sincronizando}
+              >
+                {sincronizando ? <ActivityIndicator size="small" color={PALETTE.branco} /> : <MaterialCommunityIcons name="cloud-upload" size={20} color={PALETTE.branco} />}
+                <Text style={styles.btnSyncText}>Enviar</Text>
+              </TouchableOpacity>
 
-            {/* ✅ NOVO: Botão de Baixar (Pull) */}
-            <TouchableOpacity
-              style={[styles.pullButton, sincronizando && styles.syncButtonDisabled]}
-              onPress={handleRestaurarDados}
-              disabled={sincronizando}
-            >
-              <Text style={styles.pullButtonText}>
-                📥 Baixar do Servidor (Restore)
-              </Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity 
+                style={[styles.btnSyncPull, sincronizando && styles.btnDisabled]} 
+                onPress={handleRestaurarDados} 
+                disabled={sincronizando}
+              >
+                {sincronizando ? <ActivityIndicator size="small" color={PALETTE.branco} /> : <MaterialCommunityIcons name="cloud-download" size={20} color={PALETTE.branco} />}
+                <Text style={[styles.btnSyncText, { color: PALETTE.branco }]}>Baixar</Text>
+              </TouchableOpacity>
+            </View>
 
-          <View style={styles.lastSyncCard}>
-            <Text style={styles.lastSyncLabel}>Última Sincronização:</Text>
-            <Text style={styles.lastSyncTime}>{ultimaSincronizacao}</Text>
+            <View style={styles.lastSyncDivider} />
+            <Text style={styles.lastSyncText}>
+              Última atualização: <Text style={{ fontWeight: '700', color: PALETTE.preto }}>{ultimaSincronizacao}</Text>
+            </Text>
           </View>
         </View>
 
         {/* ===== QUICK ACTIONS ===== */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Ações Rápidas</Text>
+          <Text style={styles.sectionTitle}>Ações Operacionais</Text>
           <View style={styles.actionsGrid}>
-            <ActionCard
-              icon="🚚"
-              title="Entrada de Material"
-              onPress={() => router.push('/(app)/entrada-material')}
-            />
-            <ActionCard
-              icon="🌱"
-              title="Nova Leira"
-              onPress={() => router.push('/(app)/nova-leira')}
-            />
-            <ActionCard
-              icon="📊"
-              title="Relatório"
-              onPress={() => router.push('/(app)/relatorios')}
-            />
-            <ActionCard
-              icon="📋"
-              title="Monitoramento"
-              onPress={() => router.push('/(app)/selecionar-leira')}
-            />
-            <ActionCard
-              icon="🌧️"
-              title="Clima"
-              onPress={() => router.push('/(app)/monitorar-clima')}
-            />
+            <ActionCard icon="truck-fast" title="Entrada" subtitle="Receber material" onPress={() => router.push('/(app)/entrada-material')} />
+            <ActionCard icon="sprout" title="Nova Leira" subtitle="Formar leira" onPress={() => router.push('/(app)/nova-leira')} />
+            <ActionCard icon="clipboard-text-outline" title="Monitorar" subtitle="Temperaturas" onPress={() => router.push('/(app)/selecionar-leira')} />
+            <ActionCard icon="weather-partly-cloudy" title="Clima" subtitle="Registrar chuva" onPress={() => router.push('/(app)/monitorar-clima')} />
+            <ActionCard icon="chart-pie" title="Relatórios" subtitle="Visão geral" onPress={() => router.push('/(app)/relatorios')} />
           </View>
         </View>
 
-        {/* ===== BOTÕES PERIGOSOS (RESET + LOGOUT) ===== */}
+        {/* ===== DANGER ZONE ===== */}
         <View style={styles.dangerSection}>
-          <TouchableOpacity
-            style={styles.resetButton}
-            onPress={handleReset}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.resetButtonText}>🗑️ Resetar App</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.logoutButtonFull}
-            onPress={handleLogout}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.logoutButtonText}>🚪 Sair</Text>
+          <TouchableOpacity style={styles.dangerCard} onPress={handleReset} activeOpacity={0.7}>
+            <View style={styles.dangerIconBox}>
+              <MaterialCommunityIcons name="database-remove" size={24} color={PALETTE.erro} />
+            </View>
+            <View style={styles.dangerTextCol}>
+              <Text style={styles.dangerTitle}>Limpar Dados Locais</Text>
+              <Text style={styles.dangerSubtitle}>Apaga todo o histórico do aparelho</Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={PALETTE.erro} />
           </TouchableOpacity>
         </View>
 
-        {/* ===== FOOTER INFO ===== */}
+        {/* ===== FOOTER ===== */}
         <View style={styles.footerInfo}>
-          <Text style={styles.footerVersion}>v1.0.0 • Campos Solo</Text>
+          <Text style={styles.footerVersion}>Campos Solo v1.0.0</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ===== COMPONENTE: STAT CARD =====
-interface StatCardProps {
-  icon: string;
-  title: string;
-  value: string;
-  color: string;
-}
+// ===== COMPONENTES AUXILIARES =====
 
-function StatCard({ icon, title, value, color }: StatCardProps) {
+function StatCard({ icon, title, value, color, bgColor }: any) {
   return (
-    <View style={[styles.statCard, { borderLeftColor: color }]}>
-      <Text style={styles.statIcon}>{icon}</Text>
-      <View style={styles.statContent}>
-        <Text style={styles.statValue}>{value}</Text>
-        <Text style={styles.statTitle}>{title}</Text>
-      </View>
+    <View style={[styles.statCard, { backgroundColor: bgColor, borderColor: color }]}>
+      <MaterialCommunityIcons name={icon} size={28} color={color} style={{ marginBottom: 8 }} />
+      <Text style={[styles.statValue, { color }]}>{value}</Text>
+      <Text style={[styles.statTitle, { color }]}>{title}</Text>
     </View>
   );
 }
 
-// ===== COMPONENTE: DETAIL CARD =====
-interface DetailCardProps {
-  icon: string;
-  label: string;
-  value: string;
-  color: string;
-}
-
-function DetailCard({ icon, label, value, color }: DetailCardProps) {
+function DetailCard({ icon, label, value, color }: any) {
   return (
     <View style={styles.detailCard}>
-      <Text style={styles.detailIcon}>{icon}</Text>
+      <View style={[styles.detailIconBox, { backgroundColor: `${color}15` }]}>
+        <MaterialCommunityIcons name={icon} size={20} color={color} />
+      </View>
       <Text style={styles.detailValue}>{value}</Text>
-      <Text style={[styles.detailLabel, { color }]}>{label}</Text>
+      <Text style={styles.detailLabel}>{label}</Text>
     </View>
   );
 }
 
-// ===== COMPONENTE: ACTION CARD =====
-interface ActionCardProps {
-  icon: string;
-  title: string;
-  onPress: () => void;
-}
-
-function ActionCard({ icon, title, onPress }: ActionCardProps) {
+function ActionCard({ icon, title, subtitle, onPress }: any) {
   return (
-    <TouchableOpacity
-      style={styles.actionCard}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
+    <TouchableOpacity style={styles.actionCard} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.actionIconBox}>
-        <Text style={styles.actionIcon}>{icon}</Text>
+        <MaterialCommunityIcons name={icon} size={28} color={PALETTE.verdePrimario} />
       </View>
       <Text style={styles.actionTitle}>{title}</Text>
+      <Text style={styles.actionSubtitle}>{subtitle}</Text>
     </TouchableOpacity>
   );
 }
 
 // ===== ESTILOS =====
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: PALETTE.verdeClaro,
+  container: { flex: 1, backgroundColor: PALETTE.verdeClaro },
+  scrollContent: { paddingBottom: 40 },
+  
+  // HEADER
+  header: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    paddingHorizontal: 24, 
+    paddingTop: 20,
+    paddingBottom: 24,
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 30,
-  },
+  headerContent: { flex: 1 },
+  greeting: { fontSize: 24, fontWeight: '900', color: PALETTE.preto, letterSpacing: -0.5 },
+  appTitle: { fontSize: 14, color: PALETTE.cinza, fontWeight: '600', marginTop: 2 },
+  logoutButton: { width: 44, height: 44, backgroundColor: PALETTE.branco, borderRadius: 22, justifyContent: 'center', alignItems: 'center', ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 }, android: { elevation: 2 } }) },
 
-  // ===== HEADER =====
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  section: { paddingHorizontal: 24, marginBottom: 28 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: PALETTE.preto, marginBottom: 16, letterSpacing: -0.5 },
+
+  // STATS PRINCIPAIS
+  statsContainer: { flexDirection: 'row', paddingHorizontal: 24, marginBottom: 28, gap: 12 },
+  statCard: { 
+    flex: 1, 
+    padding: 16, 
+    borderRadius: 16, 
+    borderWidth: 1,
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: PALETTE.branco,
-    marginBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: PALETTE.cinzaClaro2,
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4 }, android: { elevation: 2 } }) 
   },
-  headerContent: {
-    flex: 1,
-  },
-  greeting: {
-    fontSize: 14,
-    color: PALETTE.cinza,
-    fontWeight: '500',
-  },
-  appTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: PALETTE.verdePrimario,
-    marginTop: 4,
-  },
-  logoutButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: PALETTE.cinzaClaro2,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoutIcon: {
-    fontSize: 20,
-  },
+  statValue: { fontSize: 24, fontWeight: '900', marginBottom: 4 },
+  statTitle: { fontSize: 11, fontWeight: '700', textAlign: 'center' },
 
-  // ===== STATS =====
-  statsContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-    gap: 12,
+  // DETAILS GRID
+  detailsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  detailCard: { 
+    width: '48%', 
+    backgroundColor: PALETTE.branco, 
+    borderRadius: 16, 
+    padding: 16, 
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4 }, android: { elevation: 2 } }) 
   },
-  statCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: PALETTE.branco,
-    borderRadius: 14,
-    padding: 16,
-    borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  statIcon: {
-    fontSize: 32,
-    marginRight: 12,
-  },
-  statContent: {
-    flex: 1,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: PALETTE.preto,
-  },
-  statTitle: {
-    fontSize: 12,
-    color: PALETTE.cinza,
-    fontWeight: '500',
-    marginTop: 2,
-  },
+  detailIconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  detailValue: { fontSize: 22, fontWeight: '900', color: PALETTE.preto, marginBottom: 2 },
+  detailLabel: { fontSize: 12, fontWeight: '600', color: PALETTE.cinza },
 
-  // ===== SECTIONS =====
-  section: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: PALETTE.preto,
-    marginBottom: 12,
-  },
-
-  // ===== DETAIL CARDS =====
-  detailsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  detailCard: {
-    width: '48%',
-    backgroundColor: PALETTE.branco,
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  detailIcon: {
-    fontSize: 24,
-    marginBottom: 6,
-  },
-  detailValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: PALETTE.preto,
-  },
-  detailLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-
-  // ===== SINCRONIZAÇÃO =====
+  // SYNC CARD
   syncCard: {
     backgroundColor: PALETTE.branco,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    borderLeftWidth: 3,
-    borderLeftColor: PALETTE.verdePrimario,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    borderRadius: 16,
+    padding: 20,
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 8 }, android: { elevation: 3 } })
   },
-  syncInfo: {
-    marginBottom: 12,
-  },
-  syncLabel: {
-    fontSize: 12,
-    color: PALETTE.cinza,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  syncValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: PALETTE.preto,
-  },
-  syncButton: {
-    backgroundColor: PALETTE.verdePrimario,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  syncButtonDisabled: {
-    backgroundColor: PALETTE.cinza,
-    opacity: 0.6,
-  },
-  syncButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: PALETTE.branco,
-  },
-  pullButton: {
-    backgroundColor: '#2196F3', // Azul para diferenciar
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  pullButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: PALETTE.branco,
-  },
-  lastSyncCard: {
-    backgroundColor: PALETTE.verdeClaro2,
-    borderRadius: 10,
-    padding: 12,
-  },
-  lastSyncLabel: {
-    fontSize: 12,
-    color: PALETTE.cinza,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  lastSyncTime: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: PALETTE.verdePrimario,
-  },
+  syncHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  syncIconBox: { width: 48, height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  syncInfo: { flex: 1 },
+  syncLabel: { fontSize: 13, fontWeight: '700', color: PALETTE.cinza, marginBottom: 2 },
+  syncValue: { fontSize: 15, fontWeight: '800' },
+  
+  syncButtonsRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  btnSyncPush: { flex: 1, flexDirection: 'row', backgroundColor: PALETTE.verdePrimario, paddingVertical: 14, borderRadius: 12, justifyContent: 'center', alignItems: 'center', gap: 8 },
+  btnSyncPull: { flex: 1, flexDirection: 'row', backgroundColor: PALETTE.terracota, paddingVertical: 14, borderRadius: 12, justifyContent: 'center', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: PALETTE.terracotaClaro },
+  btnSyncText: { fontSize: 14, fontWeight: '800', color: PALETTE.branco },
+  btnDisabled: { opacity: 0.6 },
+  
+  lastSyncDivider: { height: 1, backgroundColor: PALETTE.cinzaClaro, marginBottom: 12 },
+  lastSyncText: { fontSize: 12, color: PALETTE.cinza, textAlign: 'center' },
 
-  // ===== ACTIONS =====
-  actionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 12,
+  // ACTION GRID
+  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  actionCard: { 
+    width: '48%', 
+    backgroundColor: PALETTE.branco, 
+    borderRadius: 16, 
+    padding: 16, 
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4 }, android: { elevation: 2 } }) 
   },
-  actionCard: {
-    width: '48%',
-    backgroundColor: PALETTE.branco,
-    borderRadius: 14,
+  actionIconBox: { width: 48, height: 48, borderRadius: 14, backgroundColor: PALETTE.verdeClaro, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  actionTitle: { fontSize: 14, fontWeight: '800', color: PALETTE.preto, marginBottom: 2 },
+  actionSubtitle: { fontSize: 11, fontWeight: '600', color: PALETTE.cinza },
+
+  // DANGER ZONE
+  dangerSection: { paddingHorizontal: 24, marginTop: 10, marginBottom: 20 },
+  dangerCard: {
+    flexDirection: 'row',
+    backgroundColor: PALETTE.erroClaro,
+    borderRadius: 16,
     padding: 16,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(220, 53, 69, 0.2)',
   },
-  actionIconBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: PALETTE.verdeClaro2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  actionIcon: {
-    fontSize: 28,
-  },
-  actionTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: PALETTE.preto,
-    textAlign: 'center',
-  },
+  dangerIconBox: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(220, 53, 69, 0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  dangerTextCol: { flex: 1 },
+  dangerTitle: { fontSize: 14, fontWeight: '800', color: PALETTE.erro, marginBottom: 2 },
+  dangerSubtitle: { fontSize: 12, fontWeight: '500', color: PALETTE.erro, opacity: 0.8 },
 
-  // ===== DANGER SECTION (RESET + LOGOUT) =====
-  dangerSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-    gap: 10,
-  },
-  resetButton: {
-    backgroundColor: '#FF6B6B',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  resetButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: PALETTE.branco,
-  },
-  logoutButtonFull: {
-    backgroundColor: PALETTE.erro,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  logoutButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: PALETTE.branco,
-  },
-
-  // ===== FOOTER =====
-  footerInfo: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: PALETTE.cinzaClaro,
-  },
-  footerVersion: {
-    fontSize: 11,
-    color: PALETTE.cinza,
-    opacity: 0.6,
-  },
+  // FOOTER
+  footerInfo: { alignItems: 'center', marginTop: 10 },
+  footerVersion: { fontSize: 12, fontWeight: '600', color: PALETTE.cinza, opacity: 0.7 },
 });

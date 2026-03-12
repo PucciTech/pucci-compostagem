@@ -14,7 +14,8 @@ interface Material {
   peso: number;
   origem: string;
   destino?: string;
-  deletado?: boolean; // ✅ Novo campo para saber se é exclusão
+  deletado?: boolean;
+  usado?: boolean; // 🔥 1. ADICIONADO AQUI
 }
 
 const USUARIO_ID = '116609f9-53c2-4289-9a63-0174fad8148e'; 
@@ -48,24 +49,13 @@ export const handler: Handler = async (event) => {
         
         // 🚨 CENÁRIO 1: EXCLUSÃO
         if (material.deletado === true) {
-            // Opção A: Hard Delete (Remove do banco pra sempre)
             const { error } = await supabase
                 .from("materiais_registrados")
                 .delete()
-                .eq('id', material.id); // Deleta onde o ID bate
+                .eq('id', material.id); 
             
             if (!error) deletados++;
-            
-            // Opção B (Alternativa): Soft Delete (Só marca como inativo)
-            // Se preferir manter histórico, descomente abaixo e comente o bloco acima:
-            /*
-            const { error } = await supabase
-                .from("materiais_registrados")
-                .update({ deletado: true, atualizado_em: agora })
-                .eq('id', material.id);
-            */
-            
-            continue; // Pula para o próximo item, não faz upsert
+            continue; 
         }
 
         // 💾 CENÁRIO 2: CRIAÇÃO OU EDIÇÃO (UPSERT)
@@ -82,13 +72,13 @@ export const handler: Handler = async (event) => {
             peso: material.peso,
             origem: material.origem,
             destino: destinoFinal,
+            usado: material.usado || false, // 🔥 2. ADICIONADO AQUI (Se não vier nada, salva como false)
             
             // Campos de controle
             sincronizado: true,
             sincronizado_em: agora,
-            // criado_em: NÃO ATUALIZAR (deixe o banco manter o original se já existir)
             atualizado_em: agora,
-          }, { onConflict: 'id' }); // Se o ID já existe, ele ATUALIZA. Se não, CRIA.
+          }, { onConflict: 'id' }); 
 
         if (!error) sincronizados++;
     }

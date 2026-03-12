@@ -1,38 +1,43 @@
 // app/(app)/relatorios.tsx
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   FlatList,
-  TextInput,
+  TextInput as RNTextInput,
   Modal,
-  Platform // Importante para detectar o sistema
+  Platform
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'; // Importante para áreas seguras
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
+// ===== NOVO DESIGN SYSTEM (PALETA REFINADA DO DASHBOARD) =====
 const PALETTE = {
-  verdePrimario: '#5D7261',
-  verdeClaro: '#F0F5F0',
-  verdeClaro2: '#E8F0E8',
-  terracota: '#B16338',
+  verdePrimario: '#2E4F36', 
+  verdeClaro: '#F4F7F4', 
+  verdeCard: '#E8EFE9', 
+  terracota: '#B16338', 
+  terracotaClaro: '#FDF3EE', 
   branco: '#FFFFFF',
-  preto: '#1A1A1A',
-  cinza: '#666666',
-  cinzaClaro: '#EEEEEE',
-  cinzaClaro2: '#F5F5F5',
-  sucesso: '#4CAF50',
-  warning: '#FF9800',
-  erro: '#D32F2F',
-  azul: '#2196F3'
+  preto: '#1A2B22', 
+  cinza: '#6B7A71', 
+  cinzaClaro: '#E1E8E3', 
+  erro: '#DC3545',
+  erroClaro: '#FCEAEA',
+  sucesso: '#28A745',
+  sucessoClaro: '#EAF6EC',
+  warning: '#EAB308',
+  warningClaro: '#FEF5E7',
+  info: '#0D6EFD',
+  infoClaro: '#E7F1FF',
+  azulPiscinao: '#0D6EFD',
 };
 
 interface BiossólidoEntry {
@@ -86,8 +91,8 @@ const getStatusColor = (status: string): string => {
   switch (status) {
     case 'formada': return PALETTE.terracota;
     case 'secando': return PALETTE.warning;
-    case 'compostando': return PALETTE.verdePrimario;
-    case 'maturando': return PALETTE.verdeClaro2;
+    case 'compostando': return PALETTE.info;
+    case 'maturando': return PALETTE.verdePrimario;
     case 'pronta': return PALETTE.sucesso;
     default: return PALETTE.cinza;
   }
@@ -95,12 +100,23 @@ const getStatusColor = (status: string): string => {
 
 const getStatusLabel = (status: string): string => {
   switch (status) {
-    case 'formada': return '📦 Formada';
-    case 'secando': return '💨 Secando';
-    case 'compostando': return '🔄 Compostando';
-    case 'maturando': return '🌱 Maturando';
-    case 'pronta': return '✅ Pronta';
+    case 'formada': return 'Formada';
+    case 'secando': return 'Secando';
+    case 'compostando': return 'Compostando';
+    case 'maturando': return 'Maturando';
+    case 'pronta': return 'Pronta';
     default: return 'Indefinido';
+  }
+};
+
+const getStatusIcon = (status: string): any => {
+  switch (status) {
+    case 'formada': return 'shape-outline';
+    case 'secando': return 'weather-windy';
+    case 'compostando': return 'recycle';
+    case 'maturando': return 'leaf';
+    case 'pronta': return 'check-decagram';
+    default: return 'help-circle-outline';
   }
 };
 
@@ -131,7 +147,7 @@ const verificarNecessidadeRevolvimento = (monitoramentos: MonitoramentoLeira[]):
 
 export default function RelatoriosScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets(); // Hook para pegar o tamanho da área segura
+  const insets = useSafeAreaInsets();
   const [leiras, setLeiras] = useState<Leira[]>([]);
   const [monitoramentos, setMonitoramentos] = useState<MonitoramentoLeira[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,12 +169,23 @@ export default function RelatoriosScreen() {
     }, [])
   );
 
-  const loadData = async () => {
+   const loadData = async () => {
     try {
       setLoading(true);
       const leirasRegistradas = await AsyncStorage.getItem('leirasFormadas');
-      const leirasData = leirasRegistradas ? JSON.parse(leirasRegistradas) : [];
-      setLeiras(leirasData);
+      if (leirasRegistradas) {
+        const todasLeiras = JSON.parse(leirasRegistradas);
+        
+        // 🔥 FILTRO: Apenas leiras que ESTÃO NO PÁTIO (ignora arquivada e finalizada)
+        const leirasAtivas = todasLeiras.filter((l: any) => {
+          const status = l.status?.toLowerCase() || '';
+          return !['arquivada', 'finalizada'].includes(status);
+        });
+        
+        setLeiras(leirasAtivas);
+      } else {
+        setLeiras([]);
+      }
 
       const monitoramentosRegistrados = await AsyncStorage.getItem('leirasMonitoramento');
       const monitoramentosData = monitoramentosRegistrados ? JSON.parse(monitoramentosRegistrados) : [];
@@ -265,18 +292,21 @@ export default function RelatoriosScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        
+        {/* HEADER */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Relatório de Leiras</Text>
           <TouchableOpacity style={styles.refreshButton} onPress={loadData}>
-            <Text style={styles.refreshIcon}>🔄</Text>
+            <MaterialCommunityIcons name="refresh" size={24} color={PALETTE.verdePrimario} />
           </TouchableOpacity>
         </View>
 
+        {/* FILTRAGEM RÁPIDA */}
         <View style={styles.filterContainer}>
-            <Text style={styles.filterLabel}>Filtragem Rápida:</Text>
+            <Text style={styles.filterLabel}>Filtragem Rápida</Text>
             <View style={styles.filterRow}>
                 <TouchableOpacity 
                     style={[styles.filterBtn, filtroLote ? styles.filterBtnActive : null]} 
@@ -285,7 +315,7 @@ export default function RelatoriosScreen() {
                     <Text style={[styles.filterBtnText, filtroLote ? styles.filterBtnTextActive : null]}>
                         {filtroLote ? `Lote: ${filtroLote}` : 'Todos Lotes'}
                     </Text>
-                    <Ionicons name="chevron-down" size={14} color={filtroLote ? PALETTE.branco : PALETTE.cinza} />
+                    <MaterialCommunityIcons name="chevron-down" size={18} color={filtroLote ? PALETTE.branco : PALETTE.cinza} />
                 </TouchableOpacity>
 
                 <TouchableOpacity 
@@ -295,50 +325,59 @@ export default function RelatoriosScreen() {
                     <Text style={[styles.filterBtnText, filtroLeira ? styles.filterBtnTextActive : null]}>
                         {filtroLeira ? `Leira #${filtroLeira}` : 'Todas Leiras'}
                     </Text>
-                    <Ionicons name="chevron-down" size={14} color={filtroLeira ? PALETTE.branco : PALETTE.cinza} />
+                    <MaterialCommunityIcons name="chevron-down" size={18} color={filtroLeira ? PALETTE.branco : PALETTE.cinza} />
                 </TouchableOpacity>
             </View>
             
             {(filtroLote || filtroLeira) && (
                 <TouchableOpacity onPress={() => { setFiltroLote(''); setFiltroLeira(''); }} style={styles.clearFilterBtn}>
-                    <Text style={styles.clearFilterText}>Limpar Seleção ✕</Text>
+                    <MaterialCommunityIcons name="close-circle" size={14} color={PALETTE.erro} style={{marginRight: 4}} />
+                    <Text style={styles.clearFilterText}>Limpar Seleção</Text>
                 </TouchableOpacity>
             )}
         </View>
 
+        {/* ESTATÍSTICAS GERAIS */}
         <View style={styles.statsGeraisBox}>
-          <Text style={styles.statsGeraisTitle}>📊 Estatísticas Gerais</Text>
+          <View style={styles.statsGeraisHeader}>
+            <MaterialCommunityIcons name="chart-box" size={20} color={PALETTE.verdePrimario} style={{marginRight: 8}} />
+            <Text style={styles.statsGeraisTitle}>Estatísticas Gerais</Text>
+          </View>
           <View style={styles.statsGeraisContent}>
             <Text style={styles.statsGeraisValue}>{totalLeiras}</Text>
-            <Text style={styles.statsGeraisLabel}>Total de Leiras</Text>
+            <Text style={styles.statsGeraisLabel}>Total de Leiras Registradas</Text>
           </View>
         </View>
 
+        {/* POR STATUS */}
         <View style={styles.statsStatusContainer}>
-          <Text style={styles.statsStatusTitle}>📈 Por Status</Text>
+          <Text style={styles.statsStatusTitle}>Desempenho por Status</Text>
           <View style={styles.statsStatusGrid}>
-            <StatBoxStatus label="Formadas" value={leirasFormadas.toString()} icon="📦" color={PALETTE.terracota} status="formada" onPress={() => setFiltroStatus('formada')} />
-            <StatBoxStatus label="Secagem" value={leirasSecando.toString()} icon="💨" color={PALETTE.warning} status="secando" onPress={() => setFiltroStatus('secando')} />
-            <StatBoxStatus label="Compostagem" value={leirasCompostando.toString()} icon="🔄" color={PALETTE.verdePrimario} status="compostando" onPress={() => setFiltroStatus('compostando')} />
-            <StatBoxStatus label="Maturação" value={leirasMaturando.toString()} icon="🌱" color={PALETTE.verdeClaro2} status="maturando" onPress={() => setFiltroStatus('maturando')} />
-            <StatBoxStatus label="Venda" value={leirasProtas.toString()} icon="✅" color={PALETTE.sucesso} status="pronta" onPress={() => setFiltroStatus('pronta')} />
+            <StatBoxStatus label="Formadas" value={leirasFormadas.toString()} icon="shape-outline" color={PALETTE.terracota} status="formada" isActive={filtroStatus === 'formada'} onPress={() => setFiltroStatus(filtroStatus === 'formada' ? 'todas' : 'formada')} />
+            <StatBoxStatus label="Secagem" value={leirasSecando.toString()} icon="weather-windy" color={PALETTE.warning} status="secando" isActive={filtroStatus === 'secando'} onPress={() => setFiltroStatus(filtroStatus === 'secando' ? 'todas' : 'secando')} />
+            <StatBoxStatus label="Compostagem" value={leirasCompostando.toString()} icon="recycle" color={PALETTE.info} status="compostando" isActive={filtroStatus === 'compostando'} onPress={() => setFiltroStatus(filtroStatus === 'compostando' ? 'todas' : 'compostando')} />
+            <StatBoxStatus label="Maturação" value={leirasMaturando.toString()} icon="leaf" color={PALETTE.verdePrimario} status="maturando" isActive={filtroStatus === 'maturando'} onPress={() => setFiltroStatus(filtroStatus === 'maturando' ? 'todas' : 'maturando')} />
+            <StatBoxStatus label="Venda" value={leirasProtas.toString()} icon="check-decagram" color={PALETTE.sucesso} status="pronta" isActive={filtroStatus === 'pronta'} onPress={() => setFiltroStatus(filtroStatus === 'pronta' ? 'todas' : 'pronta')} />
           </View>
         </View>
 
+        {/* BUSCA TEXTUAL */}
         <View style={styles.filtrosContainer}>
           <View style={styles.filtrosHeaderContainer}>
-            <Text style={styles.filtrosTitle}>Busca Textual</Text>
+            <Text style={styles.filtrosTitle}>Busca Avançada</Text>
             <TouchableOpacity style={styles.botaoToggleBusca} onPress={() => setMostrarBusca(!mostrarBusca)}>
-              <Text style={styles.textoToggleBusca}>{mostrarBusca ? '🔼 Ocultar' : '🔍 Buscar'}</Text>
+              <MaterialCommunityIcons name={mostrarBusca ? "chevron-up" : "magnify"} size={16} color={PALETTE.verdePrimario} style={{marginRight: 4}} />
+              <Text style={styles.textoToggleBusca}>{mostrarBusca ? 'Ocultar' : 'Buscar'}</Text>
             </TouchableOpacity>
           </View>
 
           {mostrarBusca && (
             <View style={styles.containerBusca}>
               <View style={styles.wrapperInputBusca}>
-                <TextInput
+                <MaterialCommunityIcons name="magnify" size={20} color={PALETTE.cinza} style={styles.searchIconInside} />
+                <RNTextInput
                   style={styles.inputBuscaTexto}
-                  placeholder="Buscar por número, lote, MTR, origem..."
+                  placeholder="Número, lote, MTR, origem..."
                   value={filtroBusca}
                   onChangeText={setFiltroBusca}
                   placeholderTextColor={PALETTE.cinza}
@@ -346,20 +385,19 @@ export default function RelatoriosScreen() {
                 />
                 {filtroBusca.length > 0 && (
                   <TouchableOpacity style={styles.botaoLimparBusca} onPress={() => setFiltroBusca('')}>
-                    <Text style={styles.textoLimparBusca}>✕</Text>
+                    <MaterialCommunityIcons name="close" size={16} color={PALETTE.branco} />
                   </TouchableOpacity>
                 )}
               </View>
 
               <View style={styles.containerResultados}>
                 <Text style={styles.textoResultados}>
-                  {leirasOrdenadas.length} de {leiras.length} leiras
-                  {(filtroBusca || filtroStatus !== 'todas' || filtroLote || filtroLeira) && ' (filtradas)'}
+                  Exibindo {leirasOrdenadas.length} de {leiras.length} leiras
                 </Text>
 
                 {(filtroBusca || filtroStatus !== 'todas' || filtroLote || filtroLeira) && (
                   <TouchableOpacity style={styles.botaoLimparTudo} onPress={limparTodosFiltros}>
-                    <Text style={styles.textoLimparTudo}>Limpar Tudo</Text>
+                    <Text style={styles.textoLimparTudo}>Limpar Filtros</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -367,11 +405,12 @@ export default function RelatoriosScreen() {
           )}
         </View>
 
+        {/* LISTAGEM */}
         <View style={styles.listSection}>
           <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>Leiras ({leirasOrdenadas.length})</Text>
+            <Text style={styles.listTitle}>Resultados ({leirasOrdenadas.length})</Text>
             <Text style={styles.listSubtitle}>
-              {filtroStatus === 'todas' ? 'Todas as leiras' : `Status: ${getStatusLabel(filtroStatus)}`}
+              {filtroStatus === 'todas' ? 'Exibindo todas as leiras' : `Filtrado por: ${getStatusLabel(filtroStatus)}`}
             </Text>
           </View>
 
@@ -390,39 +429,36 @@ export default function RelatoriosScreen() {
             />
           ) : (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>🚜</Text>
+              <MaterialCommunityIcons name="tractor" size={48} color={PALETTE.cinzaClaro} style={{ marginBottom: 16 }} />
               <Text style={styles.emptyText}>Nenhuma leira encontrada</Text>
-              <Text style={styles.emptySubtext}>Tente limpar os filtros</Text>
+              <Text style={styles.emptySubtext}>Tente ajustar ou limpar os filtros</Text>
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* ✅ MODAL DE FILTRO CORRIGIDO */}
+      {/* MODAL DE FILTRO */}
       <Modal visible={showModalFiltro} transparent animationType="slide" onRequestClose={() => setShowModalFiltro(false)}>
           <View style={styles.modalOverlay}>
-              {/* Adicionamos paddingBottom seguro para não colar na barra do celular */}
               <View style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}>
                   <View style={styles.modalHeader}>
                       <Text style={styles.modalTitle}>Selecione {tipoFiltro === 'lote' ? 'o Lote' : 'a Leira'}</Text>
-                      <TouchableOpacity onPress={() => setShowModalFiltro(false)}>
-                          <Ionicons name="close" size={24} color={PALETTE.cinza} />
+                      <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setShowModalFiltro(false)}>
+                          <MaterialCommunityIcons name="close" size={20} color={PALETTE.cinza} />
                       </TouchableOpacity>
                   </View>
                   
-                  {/* Lista com altura máxima para não estourar a tela */}
                   <View style={{ maxHeight: '80%' }}>
                     <FlatList
                         data={tipoFiltro === 'lote' ? lotesUnicos : leirasUnicas}
                         keyExtractor={(item) => item}
-                        // Adiciona padding no final da lista interna também
                         contentContainerStyle={{ paddingBottom: 20 }}
                         renderItem={({ item }) => (
                             <TouchableOpacity style={styles.modalItem} onPress={() => selecionarFiltro(item)}>
                                 <Text style={styles.modalItemText}>
                                     {tipoFiltro === 'lote' ? `Lote ${item}` : `Leira #${item}`}
                                 </Text>
-                                <Ionicons name="chevron-forward" size={20} color={PALETTE.cinzaClaro} />
+                                <MaterialCommunityIcons name="chevron-right" size={20} color={PALETTE.cinza} />
                             </TouchableOpacity>
                         )}
                     />
@@ -434,10 +470,20 @@ export default function RelatoriosScreen() {
   );
 }
 
-function StatBoxStatus({ label, value, icon, color, status, onPress }: any) {
+// ===== COMPONENTES DE UI =====
+
+function StatBoxStatus({ label, value, icon, color, status, isActive, onPress }: any) {
   return (
-    <TouchableOpacity style={[styles.statBoxStatus, { borderTopColor: color }]} onPress={onPress}>
-      <Text style={styles.statBoxStatusIcon}>{icon}</Text>
+    <TouchableOpacity 
+      style={[
+        styles.statBoxStatus, 
+        { borderTopColor: color },
+        isActive && { backgroundColor: `${color}10`, borderColor: color, borderWidth: 1 }
+      ]} 
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <MaterialCommunityIcons name={icon} size={24} color={color} style={{ marginBottom: 8 }} />
       <Text style={styles.statBoxStatusLabel}>{label}</Text>
       <Text style={[styles.statBoxStatusValue, { color }]}>{value}</Text>
     </TouchableOpacity>
@@ -449,31 +495,33 @@ function LeiraCard({ leira, monitoramentos, onPress }: any) {
   const tempMedia = getTemperaturaMedia(monitoramentos);
   const tempMaxima = getTemperaturaMaxima(monitoramentos);
   const precisaRevolver = verificarNecessidadeRevolvimento(monitoramentos);
+  const statusColor = getStatusColor(leira.status);
 
   return (
-    <TouchableOpacity style={styles.leiraCard} onPress={onPress}>
+    <TouchableOpacity style={[styles.leiraCard, { borderLeftColor: statusColor }]} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.leiraCardHeader}>
         <View style={styles.leiraCardLeft}>
-          <Text style={styles.leiraCardIcon}>🌾</Text>
+          <View style={[styles.leiraCardIconBox, { backgroundColor: `${statusColor}15` }]}>
+            <MaterialCommunityIcons name="sprout" size={24} color={statusColor} />
+          </View>
           <View style={styles.leiraCardInfo}>
             <View style={styles.leiraNumberRow}>
               <Text style={styles.leiraNumber}>Leira #{leira.numeroLeira}</Text>
-              <View style={styles.loteBadge}>
-                <Text style={styles.loteBadgeText}>Lote {leira.lote}</Text>
+              <View style={[styles.loteBadge, { backgroundColor: `${PALETTE.terracota}15` }]}>
+                <MaterialCommunityIcons name="tag" size={12} color={PALETTE.terracota} style={{marginRight: 4}} />
+                <Text style={[styles.loteBadgeText, {color: PALETTE.terracota}]}>Lote {leira.lote}</Text>
               </View>
             </View>
-            <Text style={styles.leiraData}>{leira.dataFormacao}</Text>
+            <Text style={styles.leiraData}>Formada em {leira.dataFormacao}</Text>
             <Text style={styles.leiraSubtitle}>{diasPassados} dia{diasPassados !== 1 ? 's' : ''} atrás</Text>
           </View>
         </View>
-        <View style={[styles.leiraStatusBadge, { backgroundColor: getStatusColor(leira.status) }]}>
-          <Text style={styles.leiraStatusText}>{getStatusLabel(leira.status)}</Text>
-        </View>
+        {/* ❌ O STATUS FOI REMOVIDO DAQUI PARA NÃO INVADIR O LOTE */}
       </View>
 
       {precisaRevolver && (
         <View style={styles.alertaRevolvimento}>
-          <Text style={styles.alertaIcon}>⚠️</Text>
+          <MaterialCommunityIcons name="alert" size={20} color={PALETTE.warning} style={{marginRight: 12}} />
           <View style={styles.alertaContent}>
             <Text style={styles.alertaTitle}>Revolvimento Necessário</Text>
             <Text style={styles.alertaText}>Temperatura {'>'} 65°C por 2+ dias</Text>
@@ -485,6 +533,15 @@ function LeiraCard({ leira, monitoramentos, onPress }: any) {
         <DetailItem label="Biossólido" value={`${leira.totalBiossólido.toFixed(1)} ton`} />
         <DetailItem label="Bagaço" value={`${leira.bagaço} ton`} />
         <DetailItem label="Total" value={`${(leira.totalBiossólido + leira.bagaço).toFixed(1)} ton`} />
+        
+        {/* ✅ STATUS ADICIONADO AQUI (Vai para a linha de baixo, no espaço vazio) */}
+        <View style={[styles.detailItem, { marginTop: 8, minWidth: '100%' }]}>
+          <Text style={styles.detailLabel}>Status Atual</Text>
+          <View style={[styles.leiraStatusBadge, { backgroundColor: `${statusColor}15`, alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6 }]}>
+            <MaterialCommunityIcons name={getStatusIcon(leira.status)} size={14} color={statusColor} style={{marginRight: 4}} />
+            <Text style={[styles.leiraStatusText, {color: statusColor}]}>{getStatusLabel(leira.status)}</Text>
+          </View>
+        </View>
       </View>
 
       {monitoramentos.length > 0 && (
@@ -493,6 +550,7 @@ function LeiraCard({ leira, monitoramentos, onPress }: any) {
             <Text style={styles.temperaturaLabel}>Média</Text>
             <Text style={styles.temperaturaValue}>{tempMedia.toFixed(1)}°C</Text>
           </View>
+          <View style={styles.temperaturaDivider} />
           <View style={styles.temperaturaItem}>
             <Text style={styles.temperaturaLabel}>Máxima</Text>
             <Text style={[styles.temperaturaValue, tempMaxima > 65 && styles.temperaturaAlta]}>{tempMaxima.toFixed(1)}°C</Text>
@@ -512,104 +570,175 @@ function DetailItem({ label, value }: any) {
   );
 }
 
+// ===== ESTILOS PADRONIZADOS =====
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: PALETTE.verdeClaro },
-  scrollContent: { flexGrow: 1, paddingBottom: 30 },
+  scrollContent: { flexGrow: 1, paddingBottom: 40 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, fontSize: 14, color: PALETTE.cinza },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: PALETTE.branco, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro2 },
-  backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: PALETTE.preto },
-  refreshButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  refreshIcon: { fontSize: 20 },
+  loadingText: { marginTop: 16, fontSize: 15, color: PALETTE.cinza, fontWeight: '600' },
   
-  filterContainer: { backgroundColor: PALETTE.branco, padding: 15, marginHorizontal: 20, marginTop: 15, borderRadius: 12, borderWidth: 1, borderColor: PALETTE.cinzaClaro2 },
-  filterLabel: { fontSize: 11, fontWeight: '700', color: PALETTE.cinza, marginBottom: 8, textTransform: 'uppercase' },
-  filterRow: { flexDirection: 'row', gap: 10 },
-  filterBtn: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: PALETTE.cinzaClaro2, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: PALETTE.cinzaClaro },
-  filterBtnActive: { backgroundColor: PALETTE.verdePrimario, borderColor: PALETTE.verdePrimario },
-  filterBtnText: { fontSize: 12, fontWeight: '600', color: PALETTE.cinza },
-  filterBtnTextActive: { color: PALETTE.branco },
-  clearFilterBtn: { alignSelf: 'flex-end', marginTop: 8 },
-  clearFilterText: { fontSize: 11, fontWeight: '700', color: PALETTE.erro },
-
-  statsGeraisBox: { marginHorizontal: 20, marginVertical: 20, backgroundColor: PALETTE.branco, borderRadius: 14, padding: 16, borderLeftWidth: 4, borderLeftColor: PALETTE.verdePrimario, alignItems: 'center' },
-  statsGeraisTitle: { fontSize: 14, fontWeight: '700', color: PALETTE.preto, marginBottom: 12 },
-  statsGeraisContent: { alignItems: 'center' },
-  statsGeraisValue: { fontSize: 32, fontWeight: '800', color: PALETTE.verdePrimario },
-  statsGeraisLabel: { fontSize: 12, color: PALETTE.cinza, fontWeight: '600', marginTop: 4 },
-  
-  statsStatusContainer: { paddingHorizontal: 20, marginBottom: 20 },
-  statsStatusTitle: { fontSize: 14, fontWeight: '700', color: PALETTE.preto, marginBottom: 12 },
-  statsStatusGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  statBoxStatus: { flex: 1, minWidth: '48%', backgroundColor: PALETTE.branco, borderRadius: 12, padding: 12, borderTopWidth: 3, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro2 },
-  statBoxStatusIcon: { fontSize: 24, marginBottom: 6 },
-  statBoxStatusLabel: { fontSize: 11, color: PALETTE.cinza, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase' },
-  statBoxStatusValue: { fontSize: 20, fontWeight: '800', marginBottom: 4 },
-
-  filtrosContainer: { paddingHorizontal: 20, marginBottom: 20 },
-  filtrosHeaderContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  filtrosTitle: { fontSize: 12, fontWeight: '700', color: PALETTE.verdePrimario, textTransform: 'uppercase' },
-  botaoToggleBusca: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: PALETTE.verdeClaro2, borderRadius: 8, borderWidth: 1, borderColor: PALETTE.verdePrimario },
-  textoToggleBusca: { fontSize: 10, fontWeight: '600', color: PALETTE.verdePrimario },
-  containerBusca: { backgroundColor: PALETTE.branco, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: PALETTE.cinzaClaro2 },
-  wrapperInputBusca: { position: 'relative', marginBottom: 8 },
-  inputBuscaTexto: { height: 44, borderWidth: 1, borderColor: PALETTE.cinzaClaro, borderRadius: 8, paddingHorizontal: 16, fontSize: 14, backgroundColor: PALETTE.cinzaClaro2, paddingRight: 40 },
-  botaoLimparBusca: { position: 'absolute', right: 12, top: 10, width: 24, height: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: PALETTE.cinzaClaro, borderRadius: 12 },
-  textoLimparBusca: { fontSize: 14, color: PALETTE.cinza, fontWeight: '600' },
-  containerResultados: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: PALETTE.cinzaClaro2 },
-  textoResultados: { fontSize: 11, color: PALETTE.cinza, fontWeight: '600' },
-  botaoLimparTudo: { paddingHorizontal: 10, paddingVertical: 4, backgroundColor: PALETTE.terracota, borderRadius: 6 },
-  textoLimparTudo: { fontSize: 10, color: PALETTE.branco, fontWeight: '700' },
-
-  listSection: { paddingHorizontal: 20 },
-  listHeader: { marginBottom: 14 },
-  listTitle: { fontSize: 16, fontWeight: '700', color: PALETTE.preto },
-  listSubtitle: { fontSize: 12, color: PALETTE.cinza, marginTop: 4 },
-  
-  leiraCard: { backgroundColor: PALETTE.branco, borderRadius: 14, padding: 16, marginBottom: 14, borderLeftWidth: 4, borderLeftColor: PALETTE.verdePrimario },
-  leiraCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  leiraCardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  leiraCardIcon: { fontSize: 32, marginRight: 12 },
-  leiraCardInfo: { flex: 1 },
-  leiraNumberRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  leiraNumber: { fontSize: 14, fontWeight: '800', color: PALETTE.preto },
-  loteBadge: { backgroundColor: PALETTE.terracota, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-  loteBadgeText: { fontSize: 10, fontWeight: '700', color: PALETTE.branco },
-  leiraData: { fontSize: 11, color: PALETTE.cinza },
-  leiraSubtitle: { fontSize: 10, color: PALETTE.cinza, fontStyle: 'italic', marginTop: 2 },
-  leiraStatusBadge: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
-  leiraStatusText: { fontSize: 10, fontWeight: '700', color: PALETTE.branco },
-  alertaRevolvimento: { flexDirection: 'row', backgroundColor: '#FFF3E0', borderRadius: 10, padding: 12, marginBottom: 12, alignItems: 'center', borderLeftWidth: 4, borderLeftColor: PALETTE.warning },
-  alertaIcon: { fontSize: 24, marginRight: 10 },
-  alertaContent: { flex: 1 },
-  alertaTitle: { fontSize: 12, fontWeight: '700', color: PALETTE.preto },
-  alertaText: { fontSize: 11, color: PALETTE.cinza, marginTop: 2 },
-  leiraCardDetails: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro2 },
-  detailItem: { flex: 1, minWidth: '45%' },
-  detailLabel: { fontSize: 10, color: PALETTE.cinza, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase' },
-  detailValue: { fontSize: 12, fontWeight: '700', color: PALETTE.preto },
-  temperaturaBox: { flexDirection: 'row', backgroundColor: PALETTE.verdeClaro2, borderRadius: 10, padding: 12, marginBottom: 12, gap: 12 },
-  temperaturaItem: { flex: 1, alignItems: 'center' },
-  temperaturaLabel: { fontSize: 10, color: PALETTE.cinza, fontWeight: '600', marginBottom: 4 },
-  temperaturaValue: { fontSize: 14, fontWeight: '700', color: PALETTE.verdePrimario },
-  temperaturaAlta: { color: PALETTE.erro },
-  emptyState: { alignItems: 'center', paddingVertical: 40 },
-  emptyIcon: { fontSize: 48, marginBottom: 12 },
-  emptyText: { fontSize: 14, fontWeight: '700', color: PALETTE.preto, marginBottom: 6 },
-  emptySubtext: { fontSize: 12, color: PALETTE.cinza },
-
-  // 🔥 ESTILOS DO MODAL CORRIGIDOS
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { 
+  // HEADER
+  header: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    paddingHorizontal: 24, 
+    paddingVertical: 20, 
     backgroundColor: PALETTE.branco, 
-    borderTopLeftRadius: 20, 
-    borderTopRightRadius: 20, 
-    padding: 20, 
-    maxHeight: '70%' 
+    borderBottomWidth: 1, 
+    borderBottomColor: PALETTE.cinzaClaro 
   },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: PALETTE.preto },
-  modalItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro2, flexDirection: 'row', justifyContent: 'space-between' },
-  modalItemText: { fontSize: 16, color: PALETTE.preto },
+  backButton: { width: 40, alignItems: 'flex-start' },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: PALETTE.preto },
+  refreshButton: { width: 40, alignItems: 'flex-end' },
+  
+  // FILTROS RÁPIDOS
+  filterContainer: { 
+    backgroundColor: PALETTE.branco, 
+    padding: 20, 
+    marginHorizontal: 24, 
+    marginTop: 24, 
+    borderRadius: 16, 
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4 },
+      android: { elevation: 2 },
+    }),
+  },
+  filterLabel: { fontSize: 12, fontWeight: '700', color: PALETTE.cinza, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  filterRow: { flexDirection: 'row', gap: 12 },
+  filterBtn: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    backgroundColor: PALETTE.verdeClaro, 
+    padding: 14, 
+    borderRadius: 12, 
+    borderWidth: 1, 
+    borderColor: PALETTE.cinzaClaro 
+  },
+  filterBtnActive: { backgroundColor: PALETTE.verdePrimario, borderColor: PALETTE.verdePrimario },
+  filterBtnText: { fontSize: 13, fontWeight: '600', color: PALETTE.cinza },
+  filterBtnTextActive: { color: PALETTE.branco, fontWeight: '700' },
+  clearFilterBtn: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', marginTop: 12, paddingVertical: 4 },
+  clearFilterText: { fontSize: 12, fontWeight: '700', color: PALETTE.erro },
+
+  // STATS GERAIS
+  statsGeraisBox: { 
+    marginHorizontal: 24, 
+    marginTop: 20,
+    marginBottom: 24, 
+    backgroundColor: PALETTE.branco, 
+    borderRadius: 16, 
+    padding: 20, 
+    borderLeftWidth: 4, 
+    borderLeftColor: PALETTE.verdePrimario,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8 },
+      android: { elevation: 3 },
+    }),
+  },
+  statsGeraisHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, justifyContent: 'center' },
+  statsGeraisTitle: { fontSize: 14, fontWeight: '800', color: PALETTE.preto, textTransform: 'uppercase', letterSpacing: 0.5 },
+  statsGeraisContent: { alignItems: 'center' },
+  statsGeraisValue: { fontSize: 36, fontWeight: '900', color: PALETTE.verdePrimario },
+  statsGeraisLabel: { fontSize: 13, color: PALETTE.cinza, fontWeight: '600', marginTop: 4 },
+  
+  // STATS POR STATUS
+  statsStatusContainer: { paddingHorizontal: 24, marginBottom: 24 },
+  statsStatusTitle: { fontSize: 16, fontWeight: '800', color: PALETTE.preto, marginBottom: 16, letterSpacing: -0.5 },
+  statsStatusGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  statBoxStatus: { 
+    flex: 1, 
+    minWidth: '47%', 
+    backgroundColor: PALETTE.branco, 
+    borderRadius: 16, 
+    padding: 16, 
+    borderTopWidth: 4, 
+    alignItems: 'center',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4 },
+      android: { elevation: 2 },
+    }),
+  },
+  statBoxStatusLabel: { fontSize: 11, color: PALETTE.cinza, fontWeight: '700', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  statBoxStatusValue: { fontSize: 22, fontWeight: '900' },
+
+  // BUSCA AVANÇADA
+  filtrosContainer: { paddingHorizontal: 24, marginBottom: 24 },
+  filtrosHeaderContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  filtrosTitle: { fontSize: 13, fontWeight: '800', color: PALETTE.preto, textTransform: 'uppercase', letterSpacing: 0.5 },
+  botaoToggleBusca: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, backgroundColor: PALETTE.verdeCard, borderRadius: 8 },
+  textoToggleBusca: { fontSize: 12, fontWeight: '700', color: PALETTE.verdePrimario },
+  containerBusca: { backgroundColor: PALETTE.branco, borderRadius: 16, padding: 16, ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4 }, android: { elevation: 2 }}) },
+  wrapperInputBusca: { position: 'relative', marginBottom: 12, justifyContent: 'center' },
+  searchIconInside: { position: 'absolute', left: 16, zIndex: 1 },
+  inputBuscaTexto: { height: 52, borderWidth: 1, borderColor: PALETTE.cinzaClaro, borderRadius: 12, paddingLeft: 44, paddingRight: 44, fontSize: 15, backgroundColor: PALETTE.verdeClaro, color: PALETTE.preto, fontWeight: '600' },
+  botaoLimparBusca: { position: 'absolute', right: 12, width: 24, height: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: PALETTE.cinza, borderRadius: 12 },
+  containerResultados: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: PALETTE.cinzaClaro },
+  textoResultados: { fontSize: 12, color: PALETTE.cinza, fontWeight: '600' },
+  botaoLimparTudo: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: PALETTE.terracota, borderRadius: 8 },
+  textoLimparTudo: { fontSize: 11, color: PALETTE.branco, fontWeight: '700' },
+
+  // LISTAGEM
+  listSection: { paddingHorizontal: 24 },
+  listHeader: { marginBottom: 16 },
+  listTitle: { fontSize: 18, fontWeight: '800', color: PALETTE.preto, letterSpacing: -0.5 },
+  listSubtitle: { fontSize: 13, color: PALETTE.cinza, marginTop: 4, fontWeight: '500' },
+  
+  // LEIRA CARD
+  leiraCard: { 
+    backgroundColor: PALETTE.branco, 
+    borderRadius: 16, 
+    padding: 20, 
+    marginBottom: 16, 
+    borderLeftWidth: 4,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8 },
+      android: { elevation: 3 },
+    }),
+  },
+  leiraCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  leiraCardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  leiraCardIconBox: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  leiraCardInfo: { flex: 1 },
+  leiraNumberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
+  leiraNumber: { fontSize: 16, fontWeight: '900', color: PALETTE.preto },
+  loteBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  loteBadgeText: { fontSize: 10, fontWeight: '800' },
+  leiraData: { fontSize: 12, color: PALETTE.cinza, fontWeight: '500' },
+  leiraSubtitle: { fontSize: 11, color: PALETTE.cinza, marginTop: 2 },
+  
+  leiraStatusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  leiraStatusText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  
+  alertaRevolvimento: { flexDirection: 'row', backgroundColor: PALETTE.warningClaro, borderRadius: 12, padding: 16, marginBottom: 16, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(234, 179, 8, 0.3)' },
+  alertaContent: { flex: 1 },
+  alertaTitle: { fontSize: 13, fontWeight: '800', color: PALETTE.preto, marginBottom: 2 },
+  alertaText: { fontSize: 12, color: PALETTE.cinza, fontWeight: '500' },
+  
+  leiraCardDetails: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro },
+  detailItem: { flex: 1, minWidth: '30%' },
+  detailLabel: { fontSize: 10, color: PALETTE.cinza, fontWeight: '700', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+  detailValue: { fontSize: 14, fontWeight: '800', color: PALETTE.preto },
+  
+  temperaturaBox: { flexDirection: 'row', backgroundColor: PALETTE.verdeClaro, borderRadius: 12, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: PALETTE.cinzaClaro },
+  temperaturaItem: { flex: 1, alignItems: 'center' },
+  temperaturaDivider: { width: 1, height: '100%', backgroundColor: PALETTE.cinzaClaro },
+  temperaturaLabel: { fontSize: 11, color: PALETTE.cinza, fontWeight: '700', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+  temperaturaValue: { fontSize: 16, fontWeight: '900', color: PALETTE.verdePrimario },
+  temperaturaAlta: { color: PALETTE.erro },
+  
+  emptyState: { alignItems: 'center', paddingVertical: 40 },
+  emptyText: { fontSize: 15, fontWeight: '700', color: PALETTE.preto, marginBottom: 6 },
+  emptySubtext: { fontSize: 13, color: PALETTE.cinza, fontWeight: '500' },
+
+  // MODAL
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(26, 43, 34, 0.6)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: PALETTE.branco, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '70%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: PALETTE.preto },
+  modalCloseBtn: { width: 32, height: 32, backgroundColor: PALETTE.verdeClaro, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  modalItem: { paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  modalItemText: { fontSize: 16, color: PALETTE.preto, fontWeight: '600' },
 });

@@ -43,7 +43,8 @@ export const syncService = {
             numeroMTR: m.numeromtr || '',
             peso: String(m.peso || '0'),
             origem: m.origem || 'Não informada', // Proteção contra null
-            destino: m.destino || 'patio'
+            destino: m.destino || 'patio',
+            usado: m.usado 
           }));
           await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(materiaisFormatados));
         }

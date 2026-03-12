@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -8,30 +8,36 @@ import {
     Alert,
     TextInput as RNTextInput,
     Modal,
-    ActivityIndicator
+    ActivityIndicator,
+    Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Button } from '@/components/Button';
 import { syncService } from '@/services/sync';
 import { useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
+// ===== NOVO DESIGN SYSTEM (PALETA REFINADA DO DASHBOARD) =====
 const PALETTE = {
-    verdePrimario: '#5D7261',
-    verdeClaro: '#F0F5F0',
-    verdeClaro2: '#E8F0E8',
+    verdePrimario: '#2E4F36',
+    verdeClaro: '#F4F7F4',
+    verdeCard: '#E8EFE9',
     terracota: '#B16338',
+    terracotaClaro: '#FDF3EE',
     branco: '#FFFFFF',
-    preto: '#1A1A1A',
-    cinza: '#666666',
-    cinzaClaro: '#EEEEEE',
-    cinzaClaro2: '#F5F5F5',
-    erro: '#D32F2F',
-    sucesso: '#4CAF50',
-    azulPiscinao: '#2196F3',
-    azulClaro: '#E3F2FD'
+    preto: '#1A2B22',
+    cinza: '#6B7A71',
+    cinzaClaro: '#E1E8E3',
+    erro: '#DC3545',
+    erroClaro: '#FCEAEA',
+    sucesso: '#28A745',
+    sucessoClaro: '#EAF6EC',
+    warning: '#F59E0B',
+    warningClaro: '#FEF5E7',
+    info: '#0D6EFD',
+    infoClaro: '#E7F1FF',
+    azulPiscinao: '#0D6EFD',
 };
 
 interface MaterialEntry {
@@ -44,33 +50,34 @@ interface MaterialEntry {
     destino: string;
     sincronizado?: boolean;
     deletado?: boolean;
+    usado?: boolean;
 }
 
 export default function EntradaMaterialScreen() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
-    
+
     // Modais
     const [showModalNovaOrigem, setShowModalNovaOrigem] = useState(false);
     const [novaOrigemText, setNovaOrigemText] = useState('');
-    
+
     const [showModalNovoDestino, setShowModalNovoDestino] = useState(false);
     const [novoDestinoText, setNovoDestinoText] = useState('');
 
     const [entries, setEntries] = useState<MaterialEntry[]>([]);
-    
+
     // Listas de Opções
     const [origens, setOrigens] = useState(['Sabesp', 'Ambient']);
-    
+
     const [destinos, setDestinos] = useState([
-        'Pátio', 
-        'Piscinão 1', 
-        'Piscinão 2', 
-        'Piscinão 3', 
+        'Pátio',
+        'Piscinão 1',
+        'Piscinão 2',
+        'Piscinão 3',
         'Estoque Bagaço'
     ]);
-    
+
     const [editingId, setEditingId] = useState<string | null>(null);
 
     const [formData, setFormData] = useState({
@@ -82,20 +89,33 @@ export default function EntradaMaterialScreen() {
         destino: 'Pátio'
     });
 
-    useFocusEffect(
-        React.useCallback(() => {
-            loadData();
-        }, [])
-    );
 
-    const loadData = async () => {
+    // ===== CARREGAR DADOS =====
+    useFocusEffect(
+    useCallback(() => {
+    loadData();}, []));
+
+       const loadData = async () => {
         try {
             setLoading(true);
+            
             const registrosExistentes = await AsyncStorage.getItem('materiaisRegistrados');
             if (registrosExistentes) {
-                setEntries(JSON.parse(registrosExistentes));
+                const materiais = JSON.parse(registrosExistentes);
+                
+                // 🔥 FILTRO MÁGICO: Traz TODOS que AINDA NÃO FORAM USADOS
+                const materiaisParaMostrar = materiais.filter((m: any) => !m.usado);
+                
+                // Ordena do mais recente para o mais antigo
+                const materiaisOrdenados = materiaisParaMostrar.sort((a: any, b: any) => Number(b.id) - Number(a.id));
+                
+                // Atualiza a tela com os materiais pendentes
+                setEntries(materiaisOrdenados);
+            } else {
+                setEntries([]);
             }
-            
+
+            // Carregar destinos e origens
             const destinosSalvos = await AsyncStorage.getItem('listaDestinos');
             if (destinosSalvos) setDestinos(JSON.parse(destinosSalvos));
 
@@ -128,12 +148,12 @@ export default function EntradaMaterialScreen() {
     const handleAddNovaOrigem = async () => {
         if (!novaOrigemText.trim()) { Alert.alert('Erro', 'Digite o nome da origem'); return; }
         if (origens.includes(novaOrigemText)) { Alert.alert('Aviso', 'Esta origem já existe'); setNovaOrigemText(''); return; }
-        
+
         const novaLista = [...origens, novaOrigemText];
         setOrigens(novaLista);
         setFormData({ ...formData, origem: novaOrigemText });
         await AsyncStorage.setItem('listaOrigens', JSON.stringify(novaLista));
-        
+
         setNovaOrigemText('');
         setShowModalNovaOrigem(false);
     };
@@ -141,12 +161,12 @@ export default function EntradaMaterialScreen() {
     const handleAddNovoDestino = async () => {
         if (!novoDestinoText.trim()) { Alert.alert('Erro', 'Digite o nome do destino'); return; }
         if (destinos.includes(novoDestinoText)) { Alert.alert('Aviso', 'Este destino já existe'); setNovoDestinoText(''); return; }
-        
+
         const novaLista = [...destinos, novoDestinoText];
         setDestinos(novaLista);
         setFormData({ ...formData, destino: novoDestinoText });
         await AsyncStorage.setItem('listaDestinos', JSON.stringify(novaLista));
-        
+
         setNovoDestinoText('');
         setShowModalNovoDestino(false);
     };
@@ -179,7 +199,6 @@ export default function EntradaMaterialScreen() {
         });
     };
 
-    // ✅ VERIFICA SE É PISCINÃO (Para saber se MTR é opcional)
     const isDestinoPiscinao = (destino: string) => {
         return destino.toLowerCase().includes('piscin') || destino.toLowerCase().includes('tanque');
     };
@@ -187,28 +206,26 @@ export default function EntradaMaterialScreen() {
     const handleSaveMaterial = async () => {
         if (!formData.data.trim()) { Alert.alert('Erro', 'Digite a data'); return; }
         if (!validarData(formData.data)) { Alert.alert('Erro', 'Data inválida'); return; }
-        
-        // ✅ LÓGICA DE VALIDAÇÃO DO MTR ATUALIZADA
+
         const ehPiscinao = isDestinoPiscinao(formData.destino);
-        
+
         if (formData.tipoMaterial === 'Biossólido') {
-            // Se NÃO for piscinão (ou seja, é Pátio), o MTR é obrigatório
-            if (!ehPiscinao && !formData.numeroMTR.trim()) { 
-                Alert.alert('Erro', 'Para o Pátio, o número do MTR é obrigatório.'); 
-                return; 
+            if (!ehPiscinao && !formData.numeroMTR.trim()) {
+                Alert.alert('Erro', 'Para o Pátio, o número do MTR é obrigatório.');
+                return;
             }
         }
-        
+
         const pesoNumerico = parseFloat(formData.peso.replace(',', '.').trim());
-        if (!formData.peso.trim() || isNaN(pesoNumerico) || pesoNumerico <= 0) { 
-            Alert.alert('Erro', 'Peso inválido'); return; 
+        if (!formData.peso.trim() || isNaN(pesoNumerico) || pesoNumerico < 0) {
+            Alert.alert('Erro', 'Peso inválido'); return;
         }
 
         const newEntry: MaterialEntry = {
             id: editingId || Date.now().toString(),
             data: formData.data,
             tipoMaterial: formData.tipoMaterial,
-            numeroMTR: formData.numeroMTR || 'S/N', // Salva S/N se estiver vazio
+            numeroMTR: formData.numeroMTR || 'S/N',
             peso: formData.peso,
             origem: formData.origem,
             destino: formData.destino,
@@ -228,7 +245,7 @@ export default function EntradaMaterialScreen() {
 
             setEntries(novaLista);
             resetForm();
-            
+
             Alert.alert('Sucesso! ✅', editingId ? 'Registro atualizado!' : 'Material registrado!');
 
         } catch (error) {
@@ -249,34 +266,70 @@ export default function EntradaMaterialScreen() {
         setShowForm(true);
     };
 
-    const handleDelete = (id: string) => {
-        Alert.alert(
-            'Excluir Registro',
-            'Tem certeza que deseja apagar este material?',
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                { 
-                    text: 'Apagar', 
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            const itemParaDeletar = entries.find(i => i.id === id);
-                            if (itemParaDeletar) {
-                                const itemMorto = { ...itemParaDeletar, deletado: true, sincronizado: false };
-                                await syncService.adicionarFila('material', itemMorto);
-                            }
-                            const novaLista = entries.filter(item => item.id !== id);
-                            setEntries(novaLista);
-                            await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novaLista));
-                            if (editingId === id) resetForm();
-                        } catch (error) {
-                            Alert.alert("Erro", "Falha ao excluir item");
-                        }
-                    }
-                }
-            ]
-        );
-    };
+     // ===== LÓGICA DE EXCLUSÃO DE MATERIAL =====
+  const handleDelete = (id: string) => {
+    Alert.alert(
+      'Excluir Material',
+      'Como deseja excluir este registro?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Apenas Local',
+          onPress: async () => {
+            try {
+              // 1. Busca os registros atuais
+              const registrosExistentes = await AsyncStorage.getItem('materiaisRegistrados');
+              if (registrosExistentes) {
+                const materiais = JSON.parse(registrosExistentes);
+                
+                // 2. Filtra removendo o item selecionado
+                const novosMateriais = materiais.filter((m: any) => m.id !== id);
+                
+                // 3. Salva no AsyncStorage
+                await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novosMateriais));
+                
+                // 4. Atualiza o estado da tela (se o seu estado chamar setEntries ou setMateriais, ajuste aqui)
+                setEntries(novosMateriais); 
+                
+                Alert.alert('Sucesso', 'Material excluído apenas deste aparelho.');
+              }
+            } catch (error) {
+              Alert.alert('Erro', 'Não foi possível excluir o material localmente.');
+            }
+          }
+        },
+        {
+          text: 'Excluir Total (Nuvem)',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // 1. Busca os registros atuais
+              const registrosExistentes = await AsyncStorage.getItem('materiaisRegistrados');
+              if (registrosExistentes) {
+                const materiais = JSON.parse(registrosExistentes);
+                
+                // 2. Filtra removendo o item selecionado
+                const novosMateriais = materiais.filter((m: any) => m.id !== id);
+                
+                // 3. Salva no AsyncStorage
+                await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novosMateriais));
+                
+                // 4. Atualiza o estado da tela
+                setEntries(novosMateriais);
+                
+                // 🔥 5. Adiciona na fila de sincronização para apagar no servidor
+                await syncService.adicionarFila('material_deletado' as any, { id });
+                
+                Alert.alert('Sucesso', 'Material excluído e exclusão enviada para a nuvem.');
+              }
+            } catch (error) {
+              Alert.alert('Erro', 'Não foi possível excluir o material.');
+            }
+          }
+        }
+      ]
+    );
+  };
 
     const resetForm = () => {
         setFormData({
@@ -294,18 +347,19 @@ export default function EntradaMaterialScreen() {
     const getDestinoColor = (destino: string) => {
         const d = destino.toLowerCase();
         if (d.includes('piscin') || d.includes('tanque')) return PALETTE.azulPiscinao;
-        if (d.includes('bagaço') || d.includes('estoque')) return '#FFA000';
+        if (d.includes('bagaço') || d.includes('estoque')) return PALETTE.warning;
         return PALETTE.sucesso;
     };
 
-    if (loading) return <ActivityIndicator style={{flex:1}} color={PALETTE.verdePrimario} />;
+    if (loading) return <ActivityIndicator style={{ flex: 1 }} color={PALETTE.verdePrimario} />;
 
-    // Helper para saber se mostra "Opcional" na label
     const mtrIsOptional = isDestinoPiscinao(formData.destino);
 
     return (
         <SafeAreaView style={styles.container}>
-            <ScrollView contentContainerStyle={styles.scrollContent}>
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+
+                {/* HEADER PADRÃO */}
                 <View style={styles.header}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
                     </TouchableOpacity>
@@ -313,8 +367,9 @@ export default function EntradaMaterialScreen() {
                     <View style={styles.backButton} />
                 </View>
 
+                {/* INFO BOX */}
                 <View style={styles.infoBox}>
-                    <Text style={styles.infoIcon}>🚚</Text>
+                    <MaterialCommunityIcons name="truck-fast" size={32} color={PALETTE.terracota} style={styles.infoIcon} />
                     <View style={styles.infoContent}>
                         <Text style={styles.infoTitle}>Registre cada entrada</Text>
                         <Text style={styles.infoText}>Biossólido ou Bagaço de Cana</Text>
@@ -324,14 +379,14 @@ export default function EntradaMaterialScreen() {
                 {showForm ? (
                     <View style={styles.formCard}>
                         <Text style={styles.formTitle}>
-                            {editingId ? '✏️ Editar Material' : 'Registrar Entrada'}
+                            {editingId ? 'Editar Material' : 'Registrar Entrada'}
                         </Text>
 
                         {/* DATA */}
                         <View style={styles.formGroup}>
                             <Text style={styles.label}>Data</Text>
                             <View style={styles.inputBox}>
-                                <Text style={styles.inputIcon}>📅</Text>
+                                <MaterialCommunityIcons name="calendar" size={20} color={PALETTE.cinza} style={styles.inputIcon} />
                                 <RNTextInput
                                     style={styles.input}
                                     value={formData.data}
@@ -352,50 +407,63 @@ export default function EntradaMaterialScreen() {
                                         style={[styles.optionBtn, formData.tipoMaterial === tipo && styles.optionBtnActive]}
                                         onPress={() => handleTipoChange(tipo)}
                                     >
+                                        <MaterialCommunityIcons
+                                            name={tipo === 'Biossólido' ? 'recycle' : 'barley'}
+                                            size={20}
+                                            color={formData.tipoMaterial === tipo ? PALETTE.verdePrimario : PALETTE.cinza}
+                                            style={{ marginBottom: 4 }}
+                                        />
                                         <Text style={[styles.optionText, formData.tipoMaterial === tipo && styles.optionTextActive]}>
-                                            {tipo === 'Biossólido' ? '💩' : '🌾'} {tipo}
+                                            {tipo}
                                         </Text>
                                     </TouchableOpacity>
                                 ))}
                             </View>
                         </View>
 
-                        {/* DESTINO (FILTRADO) */}
+                        {/* DESTINO */}
                         <View style={styles.formGroup}>
                             <View style={styles.labelHeader}>
                                 <Text style={styles.label}>Destino do Material</Text>
                                 <TouchableOpacity onPress={() => setShowModalNovoDestino(true)} style={styles.addBtnSmall}>
-                                    <Text style={styles.addBtnSmallIcon}>+</Text>
+                                    <MaterialCommunityIcons name="plus" size={16} color={PALETTE.branco} />
                                 </TouchableOpacity>
                             </View>
                             <View style={styles.optionsColumn}>
                                 {getDestinosFiltrados().map((dest) => (
                                     <TouchableOpacity
                                         key={dest}
-                                        style={[styles.optionBtn, formData.destino === dest && styles.optionBtnActive]}
+                                        style={[styles.optionBtn, formData.destino === dest && styles.optionBtnActive, { flexDirection: 'row', justifyContent: 'flex-start', paddingHorizontal: 16 }]}
                                         onPress={() => setFormData({ ...formData, destino: dest })}
                                     >
+                                        <MaterialCommunityIcons
+                                            name={dest.includes('Piscin') ? 'water' : dest.includes('Bagaço') ? 'barley' : 'sprout'}
+                                            size={20}
+                                            color={formData.destino === dest ? PALETTE.verdePrimario : PALETTE.cinza}
+                                            style={{ marginRight: 12 }}
+                                        />
                                         <Text style={[styles.optionText, formData.destino === dest && styles.optionTextActive]}>
-                                            {dest.includes('Piscin') ? '💧' : dest.includes('Bagaço') ? '🌾' : '🌱'} {dest}
+                                            {dest}
                                         </Text>
                                     </TouchableOpacity>
                                 ))}
                             </View>
                         </View>
 
-                        {/* MTR (Só para Biossólido) */}
+                        {/* MTR */}
                         {formData.tipoMaterial === 'Biossólido' && (
                             <View style={styles.formGroup}>
                                 <Text style={styles.label}>
                                     Número do MTR {mtrIsOptional ? <Text style={styles.optionalText}>(Opcional)</Text> : ''}
                                 </Text>
                                 <View style={styles.inputBox}>
-                                    <Text style={styles.inputIcon}>🔢</Text>
+                                    <MaterialCommunityIcons name="numeric" size={20} color={PALETTE.cinza} style={styles.inputIcon} />
                                     <RNTextInput
                                         style={styles.input}
                                         value={formData.numeroMTR}
                                         onChangeText={t => setFormData({ ...formData, numeroMTR: t })}
                                         placeholder={mtrIsOptional ? "S/N" : "Obrigatório para Pátio"}
+                                        placeholderTextColor={PALETTE.cinza}
                                     />
                                 </View>
                             </View>
@@ -405,32 +473,40 @@ export default function EntradaMaterialScreen() {
                         <View style={styles.formGroup}>
                             <Text style={styles.label}>Peso (Ton)</Text>
                             <View style={styles.inputBox}>
-                                <Text style={styles.inputIcon}>⚖️</Text>
+                                <MaterialCommunityIcons name="scale-balance" size={20} color={PALETTE.cinza} style={styles.inputIcon} />
                                 <RNTextInput
                                     style={styles.input}
                                     value={formData.peso}
                                     onChangeText={t => setFormData({ ...formData, peso: t })}
                                     keyboardType="decimal-pad"
+                                    placeholder="Ex: 15.5"
+                                    placeholderTextColor={PALETTE.cinza}
                                 />
                             </View>
                         </View>
 
-                        {/* ORIGEM (Só para Biossólido) */}
+                        {/* ORIGEM */}
                         {formData.tipoMaterial === 'Biossólido' && (
                             <View style={styles.formGroup}>
                                 <View style={styles.labelHeader}>
                                     <Text style={styles.label}>Origem</Text>
                                     <TouchableOpacity onPress={() => setShowModalNovaOrigem(true)} style={styles.addBtnSmall}>
-                                        <Text style={styles.addBtnSmallIcon}>+</Text>
+                                        <MaterialCommunityIcons name="plus" size={16} color={PALETTE.branco} />
                                     </TouchableOpacity>
                                 </View>
                                 <View style={styles.optionsColumn}>
                                     {origens.map((origem) => (
                                         <TouchableOpacity
                                             key={origem}
-                                            style={[styles.optionBtn, formData.origem === origem && styles.optionBtnActive]}
+                                            style={[styles.optionBtn, formData.origem === origem && styles.optionBtnActive, { flexDirection: 'row', justifyContent: 'flex-start', paddingHorizontal: 16 }]}
                                             onPress={() => setFormData({ ...formData, origem })}
                                         >
+                                            <MaterialCommunityIcons
+                                                name="factory"
+                                                size={20}
+                                                color={formData.origem === origem ? PALETTE.verdePrimario : PALETTE.cinza}
+                                                style={{ marginRight: 12 }}
+                                            />
                                             <Text style={[styles.optionText, formData.origem === origem && styles.optionTextActive]}>
                                                 {origem}
                                             </Text>
@@ -440,31 +516,32 @@ export default function EntradaMaterialScreen() {
                             </View>
                         )}
 
+                        {/* BOTÕES DE AÇÃO DO FORMULÁRIO */}
                         <View style={styles.buttonGroup}>
-                            <Button title="Cancelar" onPress={resetForm} fullWidth />
+                            <TouchableOpacity style={styles.btnCancel} onPress={resetForm}>
+                                <Text style={styles.btnCancelText}>Cancelar</Text>
+                            </TouchableOpacity>
                             <View style={styles.buttonSpacer} />
-                            <Button 
-                                title={editingId ? "Atualizar" : "Salvar"} 
-                                onPress={handleSaveMaterial} 
-                                fullWidth 
-                                variant="primary" 
-                            />
+                            <TouchableOpacity style={styles.btnSave} onPress={handleSaveMaterial}>
+                                <Text style={styles.btnSaveText}>{editingId ? "Atualizar" : "Salvar"}</Text>
+                            </TouchableOpacity>
                         </View>
                     </View>
                 ) : (
-                    <TouchableOpacity style={styles.addBtn} onPress={() => setShowForm(true)}>
-                        <Text style={styles.addBtnIcon}>+</Text>
+                    <TouchableOpacity style={styles.addBtn} onPress={() => setShowForm(true)} activeOpacity={0.8}>
+                        <MaterialCommunityIcons name="plus" size={24} color={PALETTE.branco} />
                         <Text style={styles.addBtnText}>Registrar Entrada</Text>
                     </TouchableOpacity>
                 )}
 
+                {/* LISTAGEM */}
                 <View style={styles.listSection}>
-                    <Text style={styles.listTitle}>Últimas Entradas</Text>
+                    <Text style={styles.listTitle}>Últimas 5 Entradas</Text>
                     {entries.length > 0 ? (
-                        entries.map((item) => (
-                            <MaterialCard 
-                                key={item.id} 
-                                item={item} 
+                        entries.slice(0, 5).map((item) => (
+                            <MaterialCard
+                                key={item.id}
+                                item={item}
                                 onEdit={() => handleEdit(item)}
                                 onDelete={() => handleDelete(item.id)}
                                 color={getDestinoColor(item.destino)}
@@ -472,11 +549,12 @@ export default function EntradaMaterialScreen() {
                         ))
                     ) : (
                         <View style={styles.emptyState}>
-                            <Text style={styles.emptyIcon}>📭</Text>
+                            <MaterialCommunityIcons name="inbox-remove" size={48} color={PALETTE.cinzaClaro} style={{ marginBottom: 16 }} />
                             <Text style={styles.emptyText}>Nenhum material registrado</Text>
                         </View>
                     )}
                 </View>
+
             </ScrollView>
 
             {/* MODAL NOVA ORIGEM */}
@@ -534,14 +612,19 @@ export default function EntradaMaterialScreen() {
     );
 }
 
+// ===== COMPONENTE DE CARD =====
 function MaterialCard({ item, onEdit, onDelete, color }: any) {
     return (
         <View style={[styles.materialCard, { borderLeftColor: color }]}>
             <View style={styles.materialCardHeader}>
                 <View style={styles.materialCardLeft}>
-                    <Text style={styles.materialCardIcon}>
-                        {item.tipoMaterial === 'Biossólido' ? '💩' : '🌾'}
-                    </Text>
+                    <View style={[styles.materialCardIconBox, { backgroundColor: `${color}15` }]}>
+                        <MaterialCommunityIcons
+                            name={item.tipoMaterial === 'Biossólido' ? 'recycle' : 'barley'}
+                            size={24}
+                            color={color}
+                        />
+                    </View>
                     <View style={styles.materialCardInfo}>
                         <Text style={styles.materialCardTitle}>{item.tipoMaterial}</Text>
                         <Text style={styles.materialCardDate}>{item.data}</Text>
@@ -550,16 +633,17 @@ function MaterialCard({ item, onEdit, onDelete, color }: any) {
 
                 <View style={styles.actionButtons}>
                     <TouchableOpacity style={styles.iconButton} onPress={onEdit}>
-                        <Text style={{fontSize: 18}}>✏️</Text>
+                        <MaterialCommunityIcons name="pencil" size={20} color={PALETTE.cinza} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.iconButton, {backgroundColor: '#FFEBEE'}]} onPress={onDelete}>
-                        <Text style={{fontSize: 18}}>🗑️</Text>
+                    <TouchableOpacity style={[styles.iconButton, { backgroundColor: PALETTE.erroClaro }]} onPress={onDelete}>
+                        <MaterialCommunityIcons name="delete" size={20} color={PALETTE.erro} />
                     </TouchableOpacity>
                 </View>
             </View>
 
-            <View style={[styles.destinoBadge, { backgroundColor: color + '20' }]}>
-                <Text style={[styles.destinoBadgeText, { color: color }]}>📍 {item.destino}</Text>
+            <View style={[styles.destinoBadge, { backgroundColor: `${color}15` }]}>
+                <MaterialCommunityIcons name="map-marker" size={12} color={color} style={{ marginRight: 4 }} />
+                <Text style={[styles.destinoBadgeText, { color: color }]}>{item.destino}</Text>
             </View>
 
             <View style={styles.materialCardDetails}>
@@ -581,79 +665,192 @@ function MaterialCard({ item, onEdit, onDelete, color }: any) {
     );
 }
 
+// ===== ESTILOS PADRONIZADOS =====
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: PALETTE.verdeClaro },
-    scrollContent: { flexGrow: 1, paddingBottom: 30 },
-    header: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, backgroundColor: PALETTE.branco },
-    backButton: { width: 40, alignItems: 'center' },
-    headerTitle: { fontSize: 18, fontWeight: 'bold' },
-    
-    infoBox: { flexDirection: 'row', margin: 20, padding: 15, backgroundColor: PALETTE.branco, borderRadius: 12, borderLeftWidth: 4, borderLeftColor: PALETTE.terracota, alignItems: 'center' },
-    infoIcon: { fontSize: 24, marginRight: 10 },
+    scrollContent: { flexGrow: 1, paddingBottom: 40 },
+
+    // HEADER (Padrão Dashboard)
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 24,
+        paddingVertical: 20,
+        backgroundColor: PALETTE.branco,
+        borderBottomWidth: 1,
+        borderBottomColor: PALETTE.cinzaClaro,
+    },
+    backButton: { width: 40, alignItems: 'flex-start' },
+    headerTitle: { fontSize: 18, fontWeight: '800', color: PALETTE.preto },
+
+    // INFO BOX
+    infoBox: {
+        flexDirection: 'row',
+        marginHorizontal: 24,
+        marginTop: 24,
+        marginBottom: 16,
+        padding: 16,
+        backgroundColor: PALETTE.branco,
+        borderRadius: 16,
+        borderLeftWidth: 4,
+        borderLeftColor: PALETTE.terracota,
+        alignItems: 'center',
+        ...Platform.select({
+            ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4 },
+            android: { elevation: 2 },
+        }),
+    },
+    infoIcon: { marginRight: 16 },
     infoContent: { flex: 1 },
-    infoTitle: { fontWeight: 'bold' },
-    infoText: { color: PALETTE.cinza, fontSize: 12 },
+    infoTitle: { fontWeight: '700', color: PALETTE.preto, fontSize: 15 },
+    infoText: { color: PALETTE.cinza, fontSize: 13, marginTop: 2 },
 
-    formCard: { margin: 20, padding: 20, backgroundColor: PALETTE.branco, borderRadius: 16 },
-    formTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 20 },
-    formGroup: { marginBottom: 18 },
-    label: { fontSize: 12, fontWeight: 'bold', color: PALETTE.verdePrimario, marginBottom: 8, textTransform: 'uppercase' },
+    // FORMULÁRIO
+    formCard: {
+        marginHorizontal: 24,
+        marginBottom: 24,
+        padding: 20,
+        backgroundColor: PALETTE.branco,
+        borderRadius: 16,
+        ...Platform.select({
+            ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 8 },
+            android: { elevation: 3 },
+        }),
+    },
+    formTitle: { fontSize: 18, fontWeight: '800', color: PALETTE.preto, marginBottom: 20 },
+    formGroup: { marginBottom: 20 },
+    label: { fontSize: 12, fontWeight: '700', color: PALETTE.cinza, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
     optionalText: { color: PALETTE.cinza, fontSize: 10, textTransform: 'none', fontWeight: 'normal' },
-    labelHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-    inputBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: PALETTE.cinzaClaro2, borderRadius: 10, padding: 12, borderWidth: 1.5, borderColor: PALETTE.verdePrimario },
-    inputIcon: { fontSize: 18, marginRight: 10 },
-    input: { flex: 1, fontWeight: '600' },
-    optionsRow: { flexDirection: 'row', gap: 10 },
+    labelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+
+    inputBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: PALETTE.verdeClaro,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        height: 52,
+        borderWidth: 1,
+        borderColor: PALETTE.cinzaClaro
+    },
+    inputIcon: { marginRight: 12 },
+    input: { flex: 1, fontWeight: '600', color: PALETTE.preto, fontSize: 15 },
+
+    optionsRow: { flexDirection: 'row', gap: 12 },
     optionsColumn: { gap: 10 },
-    optionBtn: { flex: 1, padding: 12, borderRadius: 10, backgroundColor: PALETTE.cinzaClaro2, alignItems: 'center' },
-    optionBtnActive: { backgroundColor: PALETTE.verdeClaro2, borderColor: PALETTE.verdePrimario, borderWidth: 1 },
-    optionText: { fontSize: 12, fontWeight: '600', color: PALETTE.cinza },
-    optionTextActive: { color: PALETTE.verdePrimario },
-    
-    addBtnSmall: { backgroundColor: PALETTE.terracota, width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-    addBtnSmallIcon: { color: PALETTE.branco, fontWeight: 'bold' },
-    
-    buttonGroup: { marginTop: 20 },
-    buttonSpacer: { height: 10 },
-    addBtn: { flexDirection: 'row', margin: 20, backgroundColor: PALETTE.verdePrimario, padding: 15, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 8 },
-    addBtnIcon: { color: PALETTE.branco, fontSize: 24, fontWeight: 'bold' },
-    addBtnText: { color: PALETTE.branco, fontWeight: 'bold' },
+    optionBtn: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 12,
+        backgroundColor: PALETTE.verdeClaro,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: PALETTE.cinzaClaro
+    },
+    optionBtnActive: {
+        backgroundColor: PALETTE.verdeCard,
+        borderColor: PALETTE.verdePrimario,
+        borderWidth: 1.5
+    },
+    optionText: { fontSize: 13, fontWeight: '600', color: PALETTE.cinza },
+    optionTextActive: { color: PALETTE.verdePrimario, fontWeight: '700' },
 
-    listSection: { paddingHorizontal: 20 },
-    listTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 12 },
-    materialCard: { backgroundColor: PALETTE.branco, borderRadius: 12, padding: 14, marginBottom: 12, borderLeftWidth: 4 },
-    materialCardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+    addBtnSmall: {
+        backgroundColor: PALETTE.terracota,
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+
+    // BOTÕES DO FORMULÁRIO
+    buttonGroup: { marginTop: 10 },
+    buttonSpacer: { height: 12 },
+    btnSave: {
+        backgroundColor: PALETTE.verdePrimario,
+        height: 52,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    btnSaveText: { color: PALETTE.branco, fontWeight: '700', fontSize: 15 },
+    btnCancel: {
+        backgroundColor: PALETTE.verdeClaro,
+        height: 52,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: PALETTE.cinzaClaro
+    },
+    btnCancelText: { color: PALETTE.cinza, fontWeight: '700', fontSize: 15 },
+
+    addBtn: {
+        flexDirection: 'row',
+        marginHorizontal: 24,
+        marginBottom: 24,
+        backgroundColor: PALETTE.verdePrimario,
+        height: 56,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        ...Platform.select({
+            ios: { shadowColor: PALETTE.verdePrimario, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+            android: { elevation: 4 },
+        }),
+    },
+    addBtnText: { color: PALETTE.branco, fontWeight: '700', fontSize: 16 },
+
+    // LISTAGEM
+    listSection: { paddingHorizontal: 24 },
+    listTitle: { fontSize: 18, fontWeight: '700', color: PALETTE.preto, marginBottom: 16, letterSpacing: -0.5 },
+
+    materialCard: {
+        backgroundColor: PALETTE.branco,
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 12,
+        borderLeftWidth: 4,
+        ...Platform.select({
+            ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4 },
+            android: { elevation: 2 },
+        }),
+    },
+    materialCardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
     materialCardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-    materialCardIcon: { fontSize: 24, marginRight: 10 },
+    materialCardIconBox: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
     materialCardInfo: { flex: 1 },
-    materialCardTitle: { fontWeight: 'bold' },
-    materialCardDate: { fontSize: 11, color: PALETTE.cinza },
-    
-    actionButtons: { flexDirection: 'row', gap: 10 },
-    iconButton: { padding: 8, borderRadius: 8, backgroundColor: PALETTE.cinzaClaro2, alignItems: 'center', justifyContent: 'center', minWidth: 40, minHeight: 40 },
+    materialCardTitle: { fontWeight: '700', fontSize: 15, color: PALETTE.preto },
+    materialCardDate: { fontSize: 12, color: PALETTE.cinza, marginTop: 2 },
 
-    destinoBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginBottom: 10 },
-    destinoBadgeText: { fontSize: 10, fontWeight: 'bold' },
+    actionButtons: { flexDirection: 'row', gap: 8 },
+    iconButton: { width: 36, height: 36, borderRadius: 10, backgroundColor: PALETTE.verdeClaro, alignItems: 'center', justifyContent: 'center' },
 
-    materialCardDetails: { flexDirection: 'row', gap: 15, marginTop: 5 },
+    destinoBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, marginBottom: 12 },
+    destinoBadgeText: { fontSize: 11, fontWeight: '700' },
+
+    materialCardDetails: { flexDirection: 'row', gap: 16, marginTop: 4, paddingTop: 12, borderTopWidth: 1, borderTopColor: PALETTE.cinzaClaro },
     detailItem: { flex: 1 },
-    detailLabel: { fontSize: 10, color: PALETTE.cinza, fontWeight: 'bold', textTransform: 'uppercase' },
-    detailValue: { fontWeight: 'bold' },
-    originBadge: { backgroundColor: PALETTE.verdeClaro2, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start', marginTop: 2 },
-    originBadgeText: { fontSize: 10, color: PALETTE.verdePrimario, fontWeight: 'bold' },
+    detailLabel: { fontSize: 11, color: PALETTE.cinza, fontWeight: '700', textTransform: 'uppercase', marginBottom: 4 },
+    detailValue: { fontWeight: '800', color: PALETTE.preto, fontSize: 14 },
+    originBadge: { backgroundColor: PALETTE.verdeCard, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start', marginTop: 6 },
+    originBadgeText: { fontSize: 11, color: PALETTE.verdePrimario, fontWeight: '700' },
 
-    emptyState: { alignItems: 'center', padding: 40 },
-    emptyIcon: { fontSize: 40, marginBottom: 10 },
-    emptyText: { fontWeight: 'bold' },
+    emptyState: { alignItems: 'center', paddingVertical: 40 },
+    emptyText: { fontWeight: '600', color: PALETTE.cinza, fontSize: 15 },
 
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
-    modalContent: { backgroundColor: PALETTE.branco, borderRadius: 16, padding: 20 },
-    modalTitle: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
-    modalInputBox: { backgroundColor: PALETTE.cinzaClaro2, borderRadius: 10, padding: 12, marginBottom: 20 },
-    modalInput: { fontSize: 16 },
-    modalButtons: { flexDirection: 'row', gap: 10 },
-    modalBtnCancelar: { flex: 1, padding: 12, backgroundColor: PALETTE.cinzaClaro2, borderRadius: 10, alignItems: 'center' },
-    modalBtnCancelarText: { fontWeight: 'bold', color: PALETTE.cinza },
-    modalBtnConfirmar: { flex: 1, padding: 12, backgroundColor: PALETTE.verdePrimario, borderRadius: 10, alignItems: 'center' },
-    modalBtnConfirmarText: { fontWeight: 'bold', color: PALETTE.branco },
+    // MODAIS
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(26, 43, 34, 0.6)', justifyContent: 'center', padding: 24 },
+    modalContent: { backgroundColor: PALETTE.branco, borderRadius: 20, padding: 24 },
+    modalTitle: { fontSize: 18, fontWeight: '800', color: PALETTE.preto, textAlign: 'center', marginBottom: 20 },
+    modalInputBox: { backgroundColor: PALETTE.verdeClaro, borderRadius: 12, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: PALETTE.cinzaClaro },
+    modalInput: { fontSize: 16, color: PALETTE.preto },
+    modalButtons: { flexDirection: 'row', gap: 12 },
+    modalBtnCancelar: { flex: 1, paddingVertical: 14, backgroundColor: PALETTE.verdeClaro, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: PALETTE.cinzaClaro },
+    modalBtnCancelarText: { fontWeight: '700', color: PALETTE.cinza, fontSize: 15 },
+    modalBtnConfirmar: { flex: 1, paddingVertical: 14, backgroundColor: PALETTE.verdePrimario, borderRadius: 12, alignItems: 'center' },
+    modalBtnConfirmarText: { fontWeight: '700', color: PALETTE.branco, fontSize: 15 },
 });

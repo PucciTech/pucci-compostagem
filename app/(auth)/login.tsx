@@ -3,46 +3,48 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Alert,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
+  TextInput,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { TextInput } from '@/components/TextInput';
-import { Button } from '@/components/Button';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { authService } from '@/services/auth';
 
+// ===== DESIGN SYSTEM CLEAN =====
 const PALETTE = {
-  verdePrimario: '#5D7261',
-  verdeClaro: '#F0F5F0',
-  verdeClaro2: '#E8F0E8',
-  verdeHover: '#4F6154',
-  verdeSuave: '#7A8A7E',
-  terracota: '#B16338',
-  terracotaClaro: '#F5E8E0',
+  verdeEscuro: '#2C4C3B',
+  verdeCard: '#EAF2EC',
+  verdeBorda: '#CDE0D4',
   branco: '#FFFFFF',
-  preto: '#1A1A1A',
-  cinza: '#666666',
-  cinzaClaro: '#EEEEEE',
-  erro: '#D32F2F',
-  sucesso: '#4CAF50',
+  preto: '#1A2B22',
+  cinza: '#7A8C81',
+  terracota: '#C06A45',
+  amareloIcone: '#EAB308',
+  erro: '#DC3545',
+  erroClaro: '#FCEAEA',
 };
+
+const PIN_LENGTH = 4;
 
 export default function LoginScreen() {
   const router = useRouter();
+  
+  const [hasPIN, setHasPIN] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState('');
+
   const [pin, setPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [hasPIN, setHasPIN] = useState<boolean | null>(null);
-  const [pinError, setPinError] = useState('');
-  const [newPinError, setNewPinError] = useState('');
-  const [confirmPinError, setConfirmPinError] = useState('');
+  const [createStep, setCreateStep] = useState<'enter' | 'confirm'>('enter');
 
   useEffect(() => {
     checkPIN();
@@ -53,77 +55,42 @@ export default function LoginScreen() {
       const exists = await authService.hasPIN();
       setHasPIN(exists);
     } catch (error) {
-      Alert.alert('Erro', 'Erro ao inicializar');
+      Alert.alert('Erro', 'Erro ao inicializar o sistema de segurança.');
     }
   };
 
-  const validatePIN = (value: string): boolean => {
-    if (!value) {
-      setPinError('Digite seu PIN');
-      return false;
+  const handlePinChange = (text: string) => {
+    const numericText = text.replace(/[^0-9]/g, '');
+    setErro('');
+
+    if (hasPIN) {
+      setPin(numericText);
+    } else {
+      if (createStep === 'enter') setNewPin(numericText);
+      else setConfirmPin(numericText);
     }
-    if (!/^\d{4,6}$/.test(value)) {
-      setPinError('PIN deve ter 4 a 6 dígitos');
-      return false;
-    }
-    setPinError('');
-    return true;
   };
 
-  const validateNewPIN = (newValue: string, confirmValue: string): boolean => {
-    if (!newValue) {
-      setNewPinError('Digite um PIN');
-      return false;
+  // ===== AÇÃO DO BOTÃO ENTRAR =====
+  const handleActionButton = () => {
+    Keyboard.dismiss();
+    
+    if (hasPIN) {
+      executarLogin();
+    } else {
+      if (createStep === 'enter') {
+        if (newPin.length === PIN_LENGTH) {
+          setCreateStep('confirm');
+        } else {
+          setErro('Digite os 4 números');
+        }
+      } else {
+        executarCriacaoPIN();
+      }
     }
-    if (!/^\d{4,6}$/.test(newValue)) {
-      setNewPinError('PIN deve ter 4 a 6 dígitos');
-      return false;
-    }
-    setNewPinError('');
-
-    if (!confirmValue) {
-      setConfirmPinError('Confirme seu PIN');
-      return false;
-    }
-    if (newValue !== confirmValue) {
-      setConfirmPinError('PINs não correspondem');
-      return false;
-    }
-    setConfirmPinError('');
-    return true;
   };
 
-  // ===== FUNÇÃO: Esqueci a Senha =====
-  const handleForgotPIN = () => {
-    Alert.alert(
-      'Esqueceu o PIN?',
-      'Para criar um novo PIN, o acesso atual será resetado. Todos os dados não sincronizados podem ser perdidos. Deseja continuar?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Redefinir Acesso',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading(true);
-              await authService.removePIN();
-              setHasPIN(false); // Muda o estado para mostrar a tela de cadastro
-              setPin('');
-              Alert.alert('Acesso Resetado', 'Agora você pode criar um novo PIN.');
-            } catch (error) {
-              Alert.alert('Erro', 'Não foi possível resetar o acesso.');
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleLogin = async () => {
-    if (!validatePIN(pin)) return;
-
+  const executarLogin = async () => {
     setLoading(true);
     try {
       const isValid = await authService.validatePIN(pin);
@@ -134,302 +101,215 @@ export default function LoginScreen() {
           pin: pin,
           logadoEm: new Date().toISOString(),
         };
-
         await AsyncStorage.setItem('operadorLogado', JSON.stringify(operador));
-        console.log('✅ Operador salvo no AsyncStorage:', operador.nome);
-
         router.replace('/(app)');
       } else {
-        Alert.alert('Erro', 'PIN incorreto');
+        setErro('PIN incorreto. Tente novamente.');
         setPin('');
       }
     } catch (error) {
-      console.error('❌ Erro ao fazer login:', error);
-      Alert.alert('Erro', 'Erro ao fazer login');
+      setErro('Erro ao validar acesso.');
+      setPin('');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreatePIN = async () => {
-    if (!validateNewPIN(newPin, confirmPin)) return;
+  const executarCriacaoPIN = async () => {
+    if (newPin !== confirmPin) {
+      setErro('Os PINs não conferem. Tente novamente.');
+      setNewPin('');
+      setConfirmPin('');
+      setCreateStep('enter');
+      return;
+    }
 
     setLoading(true);
     try {
       await authService.setPIN(newPin);
-      Alert.alert('Sucesso', 'PIN criado!');
       setNewPin('');
       setConfirmPin('');
       setHasPIN(true);
     } catch (error) {
-      Alert.alert('Erro', 'Erro ao criar PIN');
+      setErro('Erro ao salvar o novo PIN.');
+      setNewPin('');
+      setConfirmPin('');
+      setCreateStep('enter');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleForgotPIN = () => {
+    Alert.alert(
+      'Redefinir Acesso',
+      'Isso apagará seu PIN atual. Deseja continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Redefinir',
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            await authService.removePIN();
+            setHasPIN(false);
+            setPin('');
+            setNewPin('');
+            setConfirmPin('');
+            setCreateStep('enter');
+            setLoading(false);
+          },
+        },
+      ]
+    );
+  };
+
   if (hasPIN === null) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={PALETTE.verdePrimario} />
-          <Text style={styles.loadingText}>Carregando...</Text>
-        </View>
-      </SafeAreaView>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={PALETTE.verdeEscuro} />
+      </View>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.decoration} />
+  const isLogin = hasPIN === true;
+  const activePin = isLogin ? pin : (createStep === 'enter' ? newPin : confirmPin);
+  
+  let instructionTitle = 'Bem-vindo de Volta';
+  let instructionSubtitle = 'Acesse seu sistema seguro';
+  let buttonText = 'Entrar no Sistema';
+  
+  if (!isLogin) {
+    instructionTitle = createStep === 'enter' ? 'Criar Acesso' : 'Confirmar Acesso';
+    instructionSubtitle = createStep === 'enter' ? 'Crie um novo PIN de 4 dígitos' : 'Digite o PIN novamente';
+    buttonText = createStep === 'enter' ? 'Continuar' : 'Salvar PIN';
+  }
 
-          <View style={styles.heroSection}>
-            <View style={styles.logoBox}>
-              <Text style={styles.logoEmoji}>🌱</Text>
+  return (
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={styles.container}>
+          
+          {/* ===== BANNER SUPERIOR CURVADO ===== */}
+          <View style={styles.topBanner}>
+            <SafeAreaView edges={['top']} />
+          </View>
+
+          {/* ===== HEADER & LOGO ===== */}
+          <View style={styles.header}>
+            <View style={styles.logoWrapper}>
+              <View style={styles.logoContainer}>
+                <MaterialCommunityIcons name="seed-outline" size={42} color={PALETTE.verdeEscuro} />
+              </View>
             </View>
-            <Text style={styles.mainTitle}>Campos Solo</Text>
-            <Text style={styles.mainSubtitle}>Gestão Inteligente de Leiras </Text>
+            <Text style={styles.companyName}>Campos Solo</Text>
+            <Text style={styles.appSubtitle}>Gestão Inteligente de Leiras</Text>
             <View style={styles.divider} />
           </View>
 
-          <View style={styles.mainContent}>
-            {hasPIN ? (
-              <LoginView
-                pin={pin}
-                pinError={pinError}
-                loading={loading}
-                onPinChange={(text) => {
-                  const filtered = text.replace(/[^0-9]/g, '').slice(0, 6);
-                  setPin(filtered);
-                  setPinError('');
-                }}
-                onLogin={handleLogin}
-                onForgotPIN={handleForgotPIN} // Passando a função nova
-              />
-            ) : (
-              <CreatePINView
-                newPin={newPin}
-                confirmPin={confirmPin}
-                newPinError={newPinError}
-                confirmPinError={confirmPinError}
-                loading={loading}
-                onNewPinChange={(text) => {
-                  const filtered = text.replace(/[^0-9]/g, '').slice(0, 6);
-                  setNewPin(filtered);
-                  setNewPinError('');
-                }}
-                onConfirmPinChange={(text) => {
-                  const filtered = text.replace(/[^0-9]/g, '').slice(0, 6);
-                  setConfirmPin(filtered);
-                  setConfirmPinError('');
-                }}
-                onCreatePIN={handleCreatePIN}
-              />
-            )}
-          </View>
+          {/* ===== CARD DE LOGIN ===== */}
+          <View style={styles.cardContainer}>
+            <View style={styles.loginCard}>
+              
+              <View style={styles.cardHeader}>
+                <View style={styles.iconBox}>
+                  <MaterialCommunityIcons name="lock" size={24} color={PALETTE.amareloIcone} />
+                </View>
+                <View>
+                  <Text style={styles.cardTitle}>{instructionTitle}</Text>
+                  <Text style={styles.cardSubtitle}>{instructionSubtitle}</Text>
+                </View>
+              </View>
 
-          <View style={styles.footerSection}>
-            <Text style={styles.footerText}>© 2025 Campos Solo</Text>
-            <Text style={styles.footerSubtext}>Gestão Agrícola Inteligente</Text>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  );
-}
+              <Text style={styles.pinLabel}>PIN DE SEGURANÇA</Text>
+              
+              {/* ===== CONTAINER DO INPUT ===== */}
+              <View style={styles.inputWrapper}>
+                
+                {/* Input Visual (Bolinhas) */}
+                <View style={[styles.pinInputBox, erro ? styles.pinInputError : null]}>
+                  <MaterialCommunityIcons name="key-variant" size={20} color={PALETTE.amareloIcone} style={styles.keyIcon} />
+                  
+                  <View style={styles.pinDotsContainer}>
+                    {[...Array(PIN_LENGTH)].map((_, i) => {
+                      const isFilled = i < activePin.length;
+                      return (
+                        <View 
+                          key={i} 
+                          style={[
+                            styles.pinDot, 
+                            isFilled && styles.pinDotFilled,
+                            erro ? styles.pinDotError : null
+                          ]} 
+                        />
+                      );
+                    })}
+                  </View>
+                </View>
 
-interface LoginViewProps {
-  pin: string;
-  pinError: string;
-  loading: boolean;
-  onPinChange: (text: string) => void;
-  onLogin: () => void;
-  onForgotPIN: () => void; // Nova prop
-}
+                {/* Input Nativo Invisível sobreposto */}
+                <TextInput
+                  style={styles.hiddenInput}
+                  value={activePin}
+                  onChangeText={handlePinChange}
+                  keyboardType="number-pad"
+                  maxLength={PIN_LENGTH}
+                  autoFocus={true}
+                  caretHidden={true}
+                />
 
-function LoginView({ pin, pinError, loading, onPinChange, onLogin, onForgotPIN }: LoginViewProps) {
-  return (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={styles.headerIcon}>
-          <Text style={styles.headerIconText}>🔐</Text>
-        </View>
-        <View style={styles.headerTexts}>
-          <Text style={styles.cardTitle}>Bem-vindo de Volta</Text>
-          <Text style={styles.cardSubtitle}>Acesse seu sistema seguro</Text>
-        </View>
-      </View>
+              </View>
 
-      <View style={styles.cardDivider} />
+              {/* Mensagem de Erro e Link Esqueceu a Senha */}
+              <View style={styles.actionRow}>
+                {erro ? (
+                  <Text style={styles.errorText}>{erro}</Text>
+                ) : (
+                  <View />
+                )}
+                
+                {isLogin && (
+                  <TouchableOpacity onPress={handleForgotPIN} style={styles.forgotBtn}>
+                    <Text style={styles.forgotText}>Esqueceu seu PIN?</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
 
-      <View style={styles.formArea}>
-        <Text style={styles.label}>PIN de Segurança</Text>
-        <View style={styles.inputBox}>
-          <Text style={styles.inputIcon}>🔑</Text>
-          <TextInput
-            label=""
-            placeholder="• • • •"
-            value={pin}
-            onChangeText={onPinChange}
-            keyboardType="number-pad"
-            maxLength={6}
-            secureTextEntry
-            error={pinError}
-          />
-        </View>
-        {pinError && <Text style={styles.errorMessage}>{pinError}</Text>}
-
-        {/* BOTÃO ESQUECEU A SENHA */}
-        <TouchableOpacity style={styles.forgotButton} onPress={onForgotPIN}>
-          <Text style={styles.forgotButtonText}>Esqueceu seu PIN?</Text>
-        </TouchableOpacity>
-
-        {pin.length > 0 && !pinError && (
-          <View style={styles.pinIndicator}>
-            {[...Array(6)].map((_, i) => (
-              <View
-                key={i}
+              {/* ===== BOTÃO ENTRAR ===== */}
+              <TouchableOpacity 
                 style={[
-                  styles.pinDot,
-                  i < pin.length && styles.pinDotActive,
+                  styles.enterButton, 
+                  (activePin.length < PIN_LENGTH || loading) && styles.enterButtonDisabled
                 ]}
-              />
-            ))}
-          </View>
-        )}
-      </View>
+                onPress={handleActionButton}
+                disabled={activePin.length < PIN_LENGTH || loading}
+                activeOpacity={0.8}
+              >
+                {loading ? (
+                  <ActivityIndicator color={PALETTE.branco} />
+                ) : (
+                  <>
+                    <Text style={styles.enterButtonText}>{buttonText}</Text>
+                    <MaterialCommunityIcons name="arrow-right" size={20} color={PALETTE.branco} />
+                  </>
+                )}
+              </TouchableOpacity>
 
-      <View style={styles.buttonContainer}>
-        <Button
-          title={loading ? 'Entrando...' : 'Entrar no Sistema'}
-          onPress={onLogin}
-          loading={loading}
-          disabled={loading || pin.length < 4}
-          fullWidth
-        />
-      </View>
-    </View>
-  );
-}
-
-interface CreatePINViewProps {
-  newPin: string;
-  confirmPin: string;
-  newPinError: string;
-  confirmPinError: string;
-  loading: boolean;
-  onNewPinChange: (text: string) => void;
-  onConfirmPinChange: (text: string) => void;
-  onCreatePIN: () => void;
-}
-
-function CreatePINView({
-  newPin,
-  confirmPin,
-  newPinError,
-  confirmPinError,
-  loading,
-  onNewPinChange,
-  onConfirmPinChange,
-  onCreatePIN,
-}: CreatePINViewProps) {
-  const strengthPercent = newPin.length < 4 ? 33 : newPin.length < 6 ? 66 : 100;
-  const strengthColor =
-    newPin.length < 4 ? PALETTE.terracota : PALETTE.verdePrimario;
-  const strengthLabel =
-    newPin.length < 4 ? 'Fraco' : newPin.length < 6 ? 'Médio' : 'Forte';
-
-  const pinsMatch = newPin === confirmPin && newPin.length >= 4;
-
-  return (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={styles.headerIcon}>
-          <Text style={styles.headerIconText}>✨</Text>
-        </View>
-        <View style={styles.headerTexts}>
-          <Text style={styles.cardTitle}>Configure Seu Acesso</Text>
-          <Text style={styles.cardSubtitle}>Crie um PIN único e seguro</Text>
-        </View>
-      </View>
-
-      <View style={styles.cardDivider} />
-
-      <View style={styles.formArea}>
-        <Text style={styles.label}>Novo PIN (4-6 dígitos)</Text>
-        <View style={styles.inputBox}>
-          <Text style={styles.inputIcon}>🔑</Text>
-          <TextInput
-            label=""
-            placeholder="• • • •"
-            value={newPin}
-            onChangeText={onNewPinChange}
-            keyboardType="number-pad"
-            maxLength={6}
-            secureTextEntry
-            error={newPinError}
-          />
-        </View>
-        {newPinError && <Text style={styles.errorMessage}>{newPinError}</Text>}
-
-        {newPin.length > 0 && (
-          <View style={styles.strengthContainer}>
-            <View style={styles.strengthBar}>
-              <View
-                style={[
-                  styles.strengthFill,
-                  { width: `${strengthPercent}%`, backgroundColor: strengthColor },
-                ]}
-              />
             </View>
-            <Text style={styles.strengthLabel}>Força: {strengthLabel}</Text>
           </View>
-        )}
 
-        <Text style={[styles.label, { marginTop: 20 }]}>Confirmar PIN</Text>
-        <View style={styles.inputBox}>
-          <Text style={styles.inputIcon}>✓</Text>
-          <TextInput
-            label=""
-            placeholder="• • • •"
-            value={confirmPin}
-            onChangeText={onConfirmPinChange}
-            keyboardType="number-pad"
-            maxLength={6}
-            secureTextEntry
-            error={confirmPinError}
-          />
+          {/* ===== FOOTER DE SEGURANÇA ===== */}
+          <View style={styles.footer}>
+            <MaterialCommunityIcons name="shield-check" size={16} color={PALETTE.cinza} />
+            <Text style={styles.footerText}>Ambiente Seguro e Criptografado</Text>
+          </View>
+
         </View>
-        {confirmPinError && <Text style={styles.errorMessage}>{confirmPinError}</Text>}
-
-        {pinsMatch && (
-          <View style={styles.successContainer}>
-            <Text style={styles.successEmoji}>✓</Text>
-            <Text style={styles.successText}>PINs coincidem!</Text>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.buttonContainer}>
-        <Button
-          title={loading ? 'Criando PIN...' : 'Criar PIN'}
-          onPress={onCreatePIN}
-          loading={loading}
-          disabled={loading || newPin.length < 4 || confirmPin.length < 4}
-          fullWidth
-          variant="primary"
-        />
-      </View>
-    </View>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -438,237 +318,208 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: PALETTE.branco,
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 30,
-  },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 14,
-    color: PALETTE.verdePrimario,
-    fontWeight: '600',
-  },
-  decoration: {
-    height: 140,
-    backgroundColor: PALETTE.verdePrimario,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
-  },
-  heroSection: {
-    alignItems: 'center',
-    marginTop: -50,
-    paddingHorizontal: 20,
-    marginBottom: 30,
-    zIndex: 10,
-  },
-  logoBox: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
     backgroundColor: PALETTE.branco,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: PALETTE.verdePrimario,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
-    marginBottom: 20,
   },
-  logoEmoji: {
-    fontSize: 52,
+  topBanner: {
+    backgroundColor: PALETTE.verdeEscuro,
+    height: 160,
+    width: '100%',
+    position: 'absolute',
+    top: 0,
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
   },
-  mainTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: PALETTE.preto,
-    marginBottom: 6,
-    textAlign: 'center',
+  header: {
+    alignItems: 'center',
+    marginTop: 100,
+    paddingHorizontal: 20,
   },
-  mainSubtitle: {
-    fontSize: 15,
-    color: PALETTE.cinza,
-    fontWeight: '500',
-    textAlign: 'center',
+  logoWrapper: {
+    backgroundColor: PALETTE.branco,
+    padding: 6,
+    borderRadius: 50,
     marginBottom: 16,
   },
+  logoContainer: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: PALETTE.branco,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: PALETTE.verdeBorda,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8 },
+      android: { elevation: 4 },
+    }),
+  },
+  companyName: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: PALETTE.preto,
+    letterSpacing: -0.5,
+  },
+  appSubtitle: {
+    fontSize: 14,
+    color: PALETTE.cinza,
+    fontWeight: '500',
+    marginTop: 4,
+  },
   divider: {
-    width: 50,
+    width: 40,
     height: 3,
     backgroundColor: PALETTE.terracota,
-    borderRadius: 1.5,
+    borderRadius: 2,
+    marginTop: 16,
+    marginBottom: 8,
   },
-  mainContent: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
+  cardContainer: {
+    paddingHorizontal: 24,
+    marginTop: 24,
+    zIndex: 10,
   },
-  card: {
-    backgroundColor: PALETTE.verdeClaro2,
-    borderRadius: 20,
+  loginCard: {
+    backgroundColor: PALETTE.verdeCard,
+    borderRadius: 24,
     padding: 24,
-    borderWidth: 2,
-    borderColor: PALETTE.verdeClaro,
-    overflow: 'hidden',
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 24,
   },
-  headerIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+  iconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     backgroundColor: PALETTE.branco,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
-    borderWidth: 2,
-    borderColor: PALETTE.verdePrimario,
-  },
-  headerIconText: {
-    fontSize: 28,
-  },
-  headerTexts: {
-    flex: 1,
+    marginRight: 16,
   },
   cardTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: PALETTE.verdePrimario,
-    marginBottom: 4,
+    color: PALETTE.preto,
   },
   cardSubtitle: {
     fontSize: 13,
     color: PALETTE.cinza,
-    fontWeight: '500',
+    marginTop: 2,
   },
-  cardDivider: {
-    height: 1,
-    backgroundColor: PALETTE.verdeClaro,
-    marginBottom: 20,
-  },
-  formArea: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 13,
+  pinLabel: {
+    fontSize: 12,
     fontWeight: '700',
-    color: PALETTE.verdePrimario,
-    marginBottom: 10,
-    textTransform: 'uppercase',
+    color: PALETTE.cinza,
+    marginBottom: 8,
     letterSpacing: 0.5,
   },
-  inputBox: {
+  inputWrapper: {
+    position: 'relative',
+    height: 60,
+  },
+  pinInputBox: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: PALETTE.branco,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderWidth: 2,
-    borderColor: PALETTE.verdePrimario,
-    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: PALETTE.verdeBorda,
+    borderRadius: 16,
+    height: '100%',
+    paddingHorizontal: 16,
   },
-  inputIcon: {
-    fontSize: 20,
-    marginRight: 10,
+  pinInputError: {
+    borderColor: PALETTE.erro,
+    backgroundColor: PALETTE.erroClaro,
   },
-  errorMessage: {
-    fontSize: 12,
+  hiddenInput: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    opacity: 0,
+    zIndex: 1,
+  },
+  keyIcon: {
+    marginRight: 16,
+  },
+  pinDotsContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  pinDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: PALETTE.verdeBorda,
+  },
+  pinDotFilled: {
+    backgroundColor: PALETTE.preto,
+  },
+  pinDotError: {
+    backgroundColor: PALETTE.erro,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 24, // Espaço extra antes do botão
+    height: 30,
+  },
+  errorText: {
     color: PALETTE.erro,
-    fontWeight: '600',
-    marginBottom: 10,
-  },
-  forgotButton: {
-    alignSelf: 'flex-end',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    marginBottom: 10,
-  },
-  forgotButtonText: {
     fontSize: 13,
+    fontWeight: '500',
+  },
+  forgotBtn: {
+    padding: 4,
+  },
+  forgotText: {
     color: PALETTE.terracota,
+    fontSize: 13,
     fontWeight: '600',
     textDecorationLine: 'underline',
   },
-  pinIndicator: {
+  
+  // ===== BOTÃO ENTRAR =====
+  enterButton: {
+    backgroundColor: PALETTE.verdeEscuro, // Cor Terracota solicitada
     flexDirection: 'row',
-    gap: 8,
     justifyContent: 'center',
-    marginTop: 10,
+    alignItems: 'center',
+    height: 56,
+    borderRadius: 16,
+    gap: 8,
   },
-  pinDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: PALETTE.verdeClaro,
-    borderWidth: 1,
-    borderColor: PALETTE.verdePrimario,
+  enterButtonDisabled: {
+    opacity: 0.6,
+    backgroundColor: PALETTE.cinza, // Fica cinza se não tiver digitado os 4 números
   },
-  pinDotActive: {
-    backgroundColor: PALETTE.verdePrimario,
+  enterButtonText: {
+    color: PALETTE.branco,
+    fontSize: 16,
+    fontWeight: '700',
   },
-  strengthContainer: {
-    marginTop: 12,
-  },
-  strengthBar: {
-    height: 6,
-    backgroundColor: PALETTE.verdeClaro,
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  strengthFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  strengthLabel: {
-    fontSize: 11,
-    color: PALETTE.cinza,
-    fontWeight: '600',
-  },
-  successContainer: {
+
+  // ===== FOOTER =====
+  footer: {
+    flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: PALETTE.branco,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 10,
-    borderLeftWidth: 4,
-    borderLeftColor: PALETTE.sucesso,
-  },
-  successEmoji: {
-    fontSize: 18,
-    marginRight: 8,
-  },
-  successText: {
-    fontSize: 12,
-    color: PALETTE.sucesso,
-    fontWeight: '600',
-  },
-  buttonContainer: {
-    marginTop: 12,
-  },
-  footerSection: {
-    alignItems: 'center',
-    paddingVertical: 20,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    gap: 6,
   },
   footerText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: PALETTE.verdePrimario,
-    marginBottom: 4,
-  },
-  footerSubtext: {
     fontSize: 12,
     color: PALETTE.cinza,
     fontWeight: '500',
-  },
+  }
 });
