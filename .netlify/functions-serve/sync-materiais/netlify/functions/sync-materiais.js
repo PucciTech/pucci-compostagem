@@ -12806,7 +12806,7 @@ var handler = async (event) => {
         if (!error2) deletados++;
         continue;
       }
-      const destinoFinal = material.destino || "patio";
+      const destinoFinal = material.destino || "P\xE1tio Normal";
       const { error } = await supabase.from("materiais_registrados").upsert({
         id: material.id,
         usuario_id: USUARIO_ID,
@@ -12817,7 +12817,6 @@ var handler = async (event) => {
         origem: material.origem,
         destino: destinoFinal,
         usado: material.usado || false,
-        // 🔥 2. ADICIONADO AQUI (Se não vier nada, salva como false)
         // Campos de controle
         sincronizado: true,
         sincronizado_em: agora,

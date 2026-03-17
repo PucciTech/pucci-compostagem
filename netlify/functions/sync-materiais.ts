@@ -15,7 +15,7 @@ interface Material {
   origem: string;
   destino?: string;
   deletado?: boolean;
-  usado?: boolean; // 🔥 1. ADICIONADO AQUI
+  usado?: boolean; 
 }
 
 const USUARIO_ID = '116609f9-53c2-4289-9a63-0174fad8148e'; 
@@ -59,7 +59,8 @@ export const handler: Handler = async (event) => {
         }
 
         // 💾 CENÁRIO 2: CRIAÇÃO OU EDIÇÃO (UPSERT)
-        const destinoFinal = material.destino || 'patio';
+        // 🔥 Atualizado para o novo padrão
+        const destinoFinal = material.destino || 'Pátio Normal';
 
         const { error } = await supabase
           .from("materiais_registrados")
@@ -72,7 +73,7 @@ export const handler: Handler = async (event) => {
             peso: material.peso,
             origem: material.origem,
             destino: destinoFinal,
-            usado: material.usado || false, // 🔥 2. ADICIONADO AQUI (Se não vier nada, salva como false)
+            usado: material.usado || false, 
             
             // Campos de controle
             sincronizado: true,

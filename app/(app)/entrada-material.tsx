@@ -70,54 +70,86 @@ export default function EntradaMaterialScreen() {
     // Listas de Opções
     const [origens, setOrigens] = useState(['Sabesp', 'Ambient']);
 
+    // 1. Atualize a lista de destinos com os novos locais
     const [destinos, setDestinos] = useState([
-        'Pátio',
+        'Pátio Normal',
+        'Pátio de Mistura',
         'Piscinão 1',
         'Piscinão 2',
         'Piscinão 3',
+        'Piscinão 4',
+        'Depósito 1',
+        'Depósito 2',
         'Estoque Bagaço'
     ]);
 
     const [editingId, setEditingId] = useState<string | null>(null);
 
+    // 2. 🔥 ADICIONE ESTE NOVO ESTADO AQUI
+    const [categoriaDestino, setCategoriaDestino] = useState('Pátio Normal');
+
+    // 3. Atualize o destino inicial do formData
     const [formData, setFormData] = useState({
         data: new Date().toLocaleDateString('pt-BR'),
         tipoMaterial: 'Biossólido',
         numeroMTR: '',
         peso: '',
         origem: 'Sabesp',
-        destino: 'Pátio'
+        destino: 'Pátio Normal' // <-- Mude de 'Pátio' para 'Pátio Normal'
     });
 
 
     // ===== CARREGAR DADOS =====
     useFocusEffect(
-    useCallback(() => {
-    loadData();}, []));
+        useCallback(() => {
+            loadData();
+        }, []));
 
-       const loadData = async () => {
+    useFocusEffect(
+        useCallback(() => {
+            loadData();
+        }, [])
+    );
+
+    const loadData = async () => {
         try {
             setLoading(true);
-            
+
             const registrosExistentes = await AsyncStorage.getItem('materiaisRegistrados');
             if (registrosExistentes) {
                 const materiais = JSON.parse(registrosExistentes);
-                
+
                 // 🔥 FILTRO MÁGICO: Traz TODOS que AINDA NÃO FORAM USADOS
                 const materiaisParaMostrar = materiais.filter((m: any) => !m.usado);
-                
+
                 // Ordena do mais recente para o mais antigo
                 const materiaisOrdenados = materiaisParaMostrar.sort((a: any, b: any) => Number(b.id) - Number(a.id));
-                
+
                 // Atualiza a tela com os materiais pendentes
                 setEntries(materiaisOrdenados);
             } else {
                 setEntries([]);
             }
 
-            // Carregar destinos e origens
+            // 🔥 MUDANÇA AQUI: Carregar destinos garantindo que as novas opções padrão existam
             const destinosSalvos = await AsyncStorage.getItem('listaDestinos');
-            if (destinosSalvos) setDestinos(JSON.parse(destinosSalvos));
+            if (destinosSalvos) {
+                const saved = JSON.parse(destinosSalvos);
+                const defaults = [
+                    'Pátio Normal',
+                    'Pátio de Mistura',
+                    'Piscinão 1',
+                    'Piscinão 2',
+                    'Piscinão 3',
+                    'Piscinão 4',
+                    'Depósito 1',
+                    'Depósito 2',
+                    'Estoque Bagaço'
+                ];
+                // Junta os padrões com os que o usuário já tinha criado, sem duplicar
+                const merged = Array.from(new Set([...defaults, ...saved]));
+                setDestinos(merged);
+            }
 
             const origensSalvas = await AsyncStorage.getItem('listaOrigens');
             if (origensSalvas) setOrigens(JSON.parse(origensSalvas));
@@ -128,7 +160,6 @@ export default function EntradaMaterialScreen() {
             setLoading(false);
         }
     };
-
     const formatarData = (text: string) => {
         let formatted = text.replace(/\D/g, '');
         if (formatted.length <= 2) return formatted;
@@ -172,31 +203,47 @@ export default function EntradaMaterialScreen() {
     };
 
     const handleTipoChange = (tipo: string) => {
-        let destinoSugerido = 'Pátio';
         if (tipo === 'Bagaço de Cana') {
-            destinoSugerido = 'Estoque Bagaço';
+            setFormData({
+                ...formData,
+                tipoMaterial: tipo,
+                numeroMTR: '',
+                origem: 'Sabesp',
+                destino: 'Estoque Bagaço'
+            });
         } else {
-            destinoSugerido = 'Pátio';
+            setCategoriaDestino('Pátio Normal'); // 🔥 Define a categoria padrão
+            setFormData({
+                ...formData,
+                tipoMaterial: tipo,
+                numeroMTR: '',
+                origem: 'Sabesp',
+                destino: 'Pátio Normal' // 🔥 Atualizado para Pátio Normal
+            });
         }
-
-        setFormData({
-            ...formData,
-            tipoMaterial: tipo,
-            numeroMTR: '',
-            origem: 'Sabesp',
-            destino: destinoSugerido
-        });
     };
 
     const getDestinosFiltrados = () => {
-        return destinos.filter(dest => {
-            const nome = dest.toLowerCase();
-            if (formData.tipoMaterial === 'Biossólido') {
-                return !nome.includes('bagaço');
-            } else {
-                return nome.includes('bagaço');
+        if (formData.tipoMaterial === 'Biossólido') {
+            if (categoriaDestino === 'Depósito') {
+                return destinos.filter(d =>
+                    d.toLowerCase().includes('piscin') ||
+                    d.toLowerCase().includes('depósito') ||
+                    d.toLowerCase().includes('mistura') ||
+                    d.toLowerCase().includes('tanque')
+                );
             }
-        });
+            return []; // Pátio Normal não tem sub-lista
+        } else {
+            return destinos.filter(d => d.toLowerCase().includes('bagaço') || d.toLowerCase().includes('estoque'));
+        }
+    };
+
+    const isMtrObrigatorio = () => {
+        if (formData.tipoMaterial !== 'Biossólido') return false;
+        if (categoriaDestino === 'Pátio Normal') return true;
+        if (categoriaDestino === 'Depósito' && formData.destino === 'Pátio de Mistura') return true;
+        return false;
     };
 
     const isDestinoPiscinao = (destino: string) => {
@@ -207,13 +254,12 @@ export default function EntradaMaterialScreen() {
         if (!formData.data.trim()) { Alert.alert('Erro', 'Digite a data'); return; }
         if (!validarData(formData.data)) { Alert.alert('Erro', 'Data inválida'); return; }
 
-        const ehPiscinao = isDestinoPiscinao(formData.destino);
+        // 🔥 NOVA LÓGICA DE VALIDAÇÃO DO MTR
+        const mtrObrigatorio = isMtrObrigatorio();
 
-        if (formData.tipoMaterial === 'Biossólido') {
-            if (!ehPiscinao && !formData.numeroMTR.trim()) {
-                Alert.alert('Erro', 'Para o Pátio, o número do MTR é obrigatório.');
-                return;
-            }
+        if (mtrObrigatorio && !formData.numeroMTR.trim()) {
+            Alert.alert('Erro', 'O número do MTR é obrigatório para este destino.');
+            return;
         }
 
         const pesoNumerico = parseFloat(formData.peso.replace(',', '.').trim());
@@ -229,7 +275,8 @@ export default function EntradaMaterialScreen() {
             peso: formData.peso,
             origem: formData.origem,
             destino: formData.destino,
-            sincronizado: false
+            sincronizado: false,
+            usado: false // 🔥 GARANTIA: Todo material novo nasce como "não usado"
         };
 
         try {
@@ -237,7 +284,7 @@ export default function EntradaMaterialScreen() {
             if (editingId) {
                 novaLista = novaLista.map(item => item.id === editingId ? newEntry : item);
             } else {
-                novaLista = [newEntry, ...novaLista];
+                novaLista = [newEntry, ...novaLista]; // Adiciona no topo da lista
             }
 
             await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novaLista));
@@ -252,7 +299,6 @@ export default function EntradaMaterialScreen() {
             Alert.alert('Erro', 'Não foi possível salvar o material');
         }
     };
-
     const handleEdit = (item: MaterialEntry) => {
         setFormData({
             data: item.data,
@@ -266,70 +312,70 @@ export default function EntradaMaterialScreen() {
         setShowForm(true);
     };
 
-     // ===== LÓGICA DE EXCLUSÃO DE MATERIAL =====
-  const handleDelete = (id: string) => {
-    Alert.alert(
-      'Excluir Material',
-      'Como deseja excluir este registro?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Apenas Local',
-          onPress: async () => {
-            try {
-              // 1. Busca os registros atuais
-              const registrosExistentes = await AsyncStorage.getItem('materiaisRegistrados');
-              if (registrosExistentes) {
-                const materiais = JSON.parse(registrosExistentes);
-                
-                // 2. Filtra removendo o item selecionado
-                const novosMateriais = materiais.filter((m: any) => m.id !== id);
-                
-                // 3. Salva no AsyncStorage
-                await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novosMateriais));
-                
-                // 4. Atualiza o estado da tela (se o seu estado chamar setEntries ou setMateriais, ajuste aqui)
-                setEntries(novosMateriais); 
-                
-                Alert.alert('Sucesso', 'Material excluído apenas deste aparelho.');
-              }
-            } catch (error) {
-              Alert.alert('Erro', 'Não foi possível excluir o material localmente.');
-            }
-          }
-        },
-        {
-          text: 'Excluir Total (Nuvem)',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // 1. Busca os registros atuais
-              const registrosExistentes = await AsyncStorage.getItem('materiaisRegistrados');
-              if (registrosExistentes) {
-                const materiais = JSON.parse(registrosExistentes);
-                
-                // 2. Filtra removendo o item selecionado
-                const novosMateriais = materiais.filter((m: any) => m.id !== id);
-                
-                // 3. Salva no AsyncStorage
-                await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novosMateriais));
-                
-                // 4. Atualiza o estado da tela
-                setEntries(novosMateriais);
-                
-                // 🔥 5. Adiciona na fila de sincronização para apagar no servidor
-                await syncService.adicionarFila('material_deletado' as any, { id });
-                
-                Alert.alert('Sucesso', 'Material excluído e exclusão enviada para a nuvem.');
-              }
-            } catch (error) {
-              Alert.alert('Erro', 'Não foi possível excluir o material.');
-            }
-          }
-        }
-      ]
-    );
-  };
+    // ===== LÓGICA DE EXCLUSÃO DE MATERIAL =====
+    const handleDelete = (id: string) => {
+        Alert.alert(
+            'Excluir Material',
+            'Como deseja excluir este registro?',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Apenas Local',
+                    onPress: async () => {
+                        try {
+                            // 1. Busca os registros atuais
+                            const registrosExistentes = await AsyncStorage.getItem('materiaisRegistrados');
+                            if (registrosExistentes) {
+                                const materiais = JSON.parse(registrosExistentes);
+
+                                // 2. Filtra removendo o item selecionado
+                                const novosMateriais = materiais.filter((m: any) => m.id !== id);
+
+                                // 3. Salva no AsyncStorage
+                                await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novosMateriais));
+
+                                // 4. Atualiza o estado da tela (se o seu estado chamar setEntries ou setMateriais, ajuste aqui)
+                                setEntries(novosMateriais);
+
+                                Alert.alert('Sucesso', 'Material excluído apenas deste aparelho.');
+                            }
+                        } catch (error) {
+                            Alert.alert('Erro', 'Não foi possível excluir o material localmente.');
+                        }
+                    }
+                },
+                {
+                    text: 'Excluir Total (Nuvem)',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            // 1. Busca os registros atuais
+                            const registrosExistentes = await AsyncStorage.getItem('materiaisRegistrados');
+                            if (registrosExistentes) {
+                                const materiais = JSON.parse(registrosExistentes);
+
+                                // 2. Filtra removendo o item selecionado
+                                const novosMateriais = materiais.filter((m: any) => m.id !== id);
+
+                                // 3. Salva no AsyncStorage
+                                await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novosMateriais));
+
+                                // 4. Atualiza o estado da tela
+                                setEntries(novosMateriais);
+
+                                // 🔥 5. Adiciona na fila de sincronização para apagar no servidor
+                                await syncService.adicionarFila('material_deletado' as any, { id });
+
+                                Alert.alert('Sucesso', 'Material excluído e exclusão enviada para a nuvem.');
+                            }
+                        } catch (error) {
+                            Alert.alert('Erro', 'Não foi possível excluir o material.');
+                        }
+                    }
+                }
+            ]
+        );
+    };
 
     const resetForm = () => {
         setFormData({
@@ -354,6 +400,7 @@ export default function EntradaMaterialScreen() {
     if (loading) return <ActivityIndicator style={{ flex: 1 }} color={PALETTE.verdePrimario} />;
 
     const mtrIsOptional = isDestinoPiscinao(formData.destino);
+    const mtrObrigatorio = isMtrObrigatorio();
 
     return (
         <SafeAreaView style={styles.container}>
@@ -421,40 +468,72 @@ export default function EntradaMaterialScreen() {
                             </View>
                         </View>
 
-                        {/* DESTINO */}
-                        <View style={styles.formGroup}>
-                            <View style={styles.labelHeader}>
-                                <Text style={styles.label}>Destino do Material</Text>
-                                <TouchableOpacity onPress={() => setShowModalNovoDestino(true)} style={styles.addBtnSmall}>
-                                    <MaterialCommunityIcons name="plus" size={16} color={PALETTE.branco} />
-                                </TouchableOpacity>
-                            </View>
-                            <View style={styles.optionsColumn}>
-                                {getDestinosFiltrados().map((dest) => (
+                        {/* 🔥 CATEGORIA DE DESTINO (Apenas para Biossólido) */}
+                        {formData.tipoMaterial === 'Biossólido' && (
+                            <View style={styles.formGroup}>
+                                <Text style={styles.label}>Categoria de Destino</Text>
+                                <View style={styles.optionsRow}>
                                     <TouchableOpacity
-                                        key={dest}
-                                        style={[styles.optionBtn, formData.destino === dest && styles.optionBtnActive, { flexDirection: 'row', justifyContent: 'flex-start', paddingHorizontal: 16 }]}
-                                        onPress={() => setFormData({ ...formData, destino: dest })}
+                                        style={[styles.optionBtn, categoriaDestino === 'Pátio Normal' && styles.optionBtnActive]}
+                                        onPress={() => {
+                                            setCategoriaDestino('Pátio Normal');
+                                            setFormData({ ...formData, destino: 'Pátio Normal' });
+                                        }}
                                     >
-                                        <MaterialCommunityIcons
-                                            name={dest.includes('Piscin') ? 'water' : dest.includes('Bagaço') ? 'barley' : 'sprout'}
-                                            size={20}
-                                            color={formData.destino === dest ? PALETTE.verdePrimario : PALETTE.cinza}
-                                            style={{ marginRight: 12 }}
-                                        />
-                                        <Text style={[styles.optionText, formData.destino === dest && styles.optionTextActive]}>
-                                            {dest}
-                                        </Text>
+                                        <MaterialCommunityIcons name="map-marker" size={20} color={categoriaDestino === 'Pátio Normal' ? PALETTE.verdePrimario : PALETTE.cinza} style={{ marginBottom: 4 }} />
+                                        <Text style={[styles.optionText, categoriaDestino === 'Pátio Normal' && styles.optionTextActive]}>Pátio Normal</Text>
                                     </TouchableOpacity>
-                                ))}
-                            </View>
-                        </View>
 
-                        {/* MTR */}
+                                    <TouchableOpacity
+                                        style={[styles.optionBtn, categoriaDestino === 'Depósito' && styles.optionBtnActive]}
+                                        onPress={() => {
+                                            setCategoriaDestino('Depósito');
+                                            setFormData({ ...formData, destino: 'Pátio de Mistura' });
+                                        }}
+                                    >
+                                        <MaterialCommunityIcons name="warehouse" size={20} color={categoriaDestino === 'Depósito' ? PALETTE.verdePrimario : PALETTE.cinza} style={{ marginBottom: 4 }} />
+                                        <Text style={[styles.optionText, categoriaDestino === 'Depósito' && styles.optionTextActive]}>Depósito / Piscinão</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        )}
+
+                        {/* 🔥 LOCAL ESPECÍFICO (Aparece se for Depósito ou Bagaço) */}
+                        {(categoriaDestino === 'Depósito' || formData.tipoMaterial === 'Bagaço de Cana') && (
+                            <View style={styles.formGroup}>
+                                <View style={styles.labelHeader}>
+                                    <Text style={styles.label}>Local Específico</Text>
+                                    <TouchableOpacity onPress={() => setShowModalNovoDestino(true)} style={styles.addBtnSmall}>
+                                        <MaterialCommunityIcons name="plus" size={16} color={PALETTE.branco} />
+                                    </TouchableOpacity>
+                                </View>
+                                <View style={styles.optionsColumn}>
+                                    {getDestinosFiltrados().map((dest) => (
+                                        <TouchableOpacity
+                                            key={dest}
+                                            style={[styles.optionBtn, formData.destino === dest && styles.optionBtnActive, { flexDirection: 'row', justifyContent: 'flex-start', paddingHorizontal: 16 }]}
+                                            onPress={() => setFormData({ ...formData, destino: dest })}
+                                        >
+                                            <MaterialCommunityIcons
+                                                name={dest.includes('Piscin') ? 'water' : dest.includes('Mistura') ? 'pot-mix' : dest.includes('Bagaço') ? 'barley' : 'warehouse'}
+                                                size={20}
+                                                color={formData.destino === dest ? PALETTE.verdePrimario : PALETTE.cinza}
+                                                style={{ marginRight: 12 }}
+                                            />
+                                            <Text style={[styles.optionText, formData.destino === dest && styles.optionTextActive]}>
+                                                {dest}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            </View>
+                        )}
+
+                        {/* 🔥 MTR COM VALIDAÇÃO DINÂMICA */}
                         {formData.tipoMaterial === 'Biossólido' && (
                             <View style={styles.formGroup}>
                                 <Text style={styles.label}>
-                                    Número do MTR {mtrIsOptional ? <Text style={styles.optionalText}>(Opcional)</Text> : ''}
+                                    Número do MTR {!mtrObrigatorio ? <Text style={styles.optionalText}>(Opcional)</Text> : <Text style={{ color: 'red' }}> *</Text>}
                                 </Text>
                                 <View style={styles.inputBox}>
                                     <MaterialCommunityIcons name="numeric" size={20} color={PALETTE.cinza} style={styles.inputIcon} />
@@ -462,7 +541,7 @@ export default function EntradaMaterialScreen() {
                                         style={styles.input}
                                         value={formData.numeroMTR}
                                         onChangeText={t => setFormData({ ...formData, numeroMTR: t })}
-                                        placeholder={mtrIsOptional ? "S/N" : "Obrigatório para Pátio"}
+                                        placeholder={!mtrObrigatorio ? "S/N" : "Obrigatório para este destino"}
                                         placeholderTextColor={PALETTE.cinza}
                                     />
                                 </View>
@@ -536,7 +615,7 @@ export default function EntradaMaterialScreen() {
 
                 {/* LISTAGEM */}
                 <View style={styles.listSection}>
-                    <Text style={styles.listTitle}>Últimas 5 Entradas</Text>
+                    <Text style={styles.listTitle}>Materiais Pendentes ({entries.length})</Text>
                     {entries.length > 0 ? (
                         entries.slice(0, 5).map((item) => (
                             <MaterialCard
