@@ -1,3 +1,16 @@
 {
-    "liveServer.settings.multiRootWorkspaceName": "my-app"
+    "liveServer.settings.multiRootWorkspaceName": "my-app",
+    "workbench.colorCustomizations": {
+        "activityBar.background": "#0B3425",
+        "titleBar.activeBackground": "#0F4934",
+        "titleBar.activeForeground": "#F2FCF8",
+        "titleBar.inactiveBackground": "#0B3425",
+        "titleBar.inactiveForeground": "#F2FCF8",
+        "statusBar.background": "#0B3425",
+        "statusBar.foreground": "#F2FCF8",
+        "statusBar.debuggingBackground": "#0B3425",
+        "statusBar.debuggingForeground": "#F2FCF8",
+        "statusBar.noFolderBackground": "#0B3425",
+        "statusBar.noFolderForeground": "#F2FCF8"
+    }
 }
