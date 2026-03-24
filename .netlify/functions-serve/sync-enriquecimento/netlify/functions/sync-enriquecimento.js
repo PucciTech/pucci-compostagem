@@ -3519,7 +3519,7 @@ var require_helpers = __commonJS({
       return timeNow + expiresIn;
     }
     function generateCallbackId() {
-      return Symbol("auth-callback");
+      return /* @__PURE__ */ Symbol("auth-callback");
     }
     var isBrowser = () => typeof window !== "undefined" && typeof document !== "undefined";
     exports2.isBrowser = isBrowser;
@@ -12820,6 +12820,8 @@ var handler = async (event) => {
         data_enriquecimento: dataISO,
         // Formato YYYY-MM-DD
         hora_enriquecimento: item.horaEnriquecimento || null,
+        // 🔥 AQUI ESTÁ A NOVA COLUNA QUE ADICIONAMOS!
+        tipo_material: item.tipoMaterial || "Bioss\xF3lido",
         peso_anterior: item.pesoAnterior,
         peso_adicionado: item.pesoAdicionado,
         peso_novo: item.pesoNovo,

@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import ClimaDaLeira from 'components/ClimaDaLeira';
 import ClimaDoMonitoramento from 'components/ClimaDoMonitoramento';
 import { syncService } from '@/services/sync';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const PALETTE = {
   verdePrimario: '#5D7261',
@@ -82,6 +83,7 @@ interface MonitoramentoLeira {
 interface EnriquecimentoLeira {
   id: string;
   leiraId: string;
+  tipoMaterial?: string;
   dataEnriquecimento: string;
   horaEnriquecimento?: string;
   pesoAdicionado: number;
@@ -1307,23 +1309,35 @@ function EnriquecimentoCard({
 }: {
   enriquecimento: EnriquecimentoLeira;
 }) {
+  // 🔥 Verifica se é bagaço
+  const isBagaco = enriquecimento.tipoMaterial === 'Bagaço';
+
   return (
     <View style={styles.enriquecimentoCard}>
       <View style={styles.enriquecimentoCardHeader}>
-        <View>
-          <Text style={styles.enriquecimentoCardData}>
-            {enriquecimento.dataEnriquecimento}
-          </Text>
-          {enriquecimento.horaEnriquecimento && (
-            <Text style={styles.enriquecimentoCardHora}>
-              {enriquecimento.horaEnriquecimento}
+        
+        {/* 🔥 Ícone e Título do Material */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ padding: 8, borderRadius: 8, marginRight: 12, backgroundColor: isBagaco ? '#FFF3E0' : '#E8F5E9' }}>
+            <MaterialCommunityIcons
+              name={isBagaco ? "barley" : "recycle"} 
+              size={20} 
+              color={isBagaco ? '#F57C00' : PALETTE.verdePrimario} 
+            />
+          </View>
+          <View>
+            <Text style={{ fontWeight: 'bold', fontSize: 16, color: PALETTE.cinza }}>
+              {enriquecimento.tipoMaterial || 'Biossólido'}
             </Text>
-          )}
+            <Text style={styles.enriquecimentoCardData}>
+              {enriquecimento.dataEnriquecimento} {enriquecimento.horaEnriquecimento ? `às ${enriquecimento.horaEnriquecimento}` : ''}
+            </Text>
+          </View>
         </View>
 
-        <View style={styles.enriquecimentoCardBadge}>
-          <Text style={styles.enriquecimentoCardBadgeIcon}>💪</Text>
-          <Text style={styles.enriquecimentoCardBadgeText}>
+        {/* 🔥 Cor dinâmica no peso adicionado */}
+        <View style={[styles.enriquecimentoCardBadge, isBagaco && { backgroundColor: '#FFF3E0' }]}>
+          <Text style={[styles.enriquecimentoCardBadgeText, isBagaco && { color: '#F57C00' }]}>
             +{enriquecimento.pesoAdicionado.toFixed(2)} ton
           </Text>
         </View>
@@ -1349,9 +1363,10 @@ function EnriquecimentoCard({
         </View>
       </View>
 
-      {(enriquecimento.numeroMTR || enriquecimento.origem) && (
+      {/* 🔥 Esconde MTR se for Bagaço */}
+      {(!isBagaco && enriquecimento.numeroMTR && enriquecimento.numeroMTR !== 'N/A' || enriquecimento.origem) && (
         <View style={styles.enriquecimentoCardInfo}>
-          {enriquecimento.numeroMTR && (
+          {!isBagaco && enriquecimento.numeroMTR && enriquecimento.numeroMTR !== 'N/A' && (
             <Text style={styles.enriquecimentoCardInfoText}>
               🔢 MTR: {enriquecimento.numeroMTR}
             </Text>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -58,7 +58,12 @@ export default function EntradaMaterialScreen() {
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
 
+
+
+    
+
     // Modais
+
     const [showModalNovaOrigem, setShowModalNovaOrigem] = useState(false);
     const [novaOrigemText, setNovaOrigemText] = useState('');
 
@@ -82,6 +87,9 @@ export default function EntradaMaterialScreen() {
         'Depósito 2',
         'Estoque Bagaço'
     ]);
+        // 🔥 NOVO ESTADO: Filtro de Período (Padrão: 30 dias)
+    const [filtroPeriodo, setFiltroPeriodo] = useState('mes'); // 'hoje', 'semana', 'mes', 'todos'
+    const [buscaMTR, setBuscaMTR] = useState(''); // <-- ADICIONE ESTA LINHA
 
     const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -100,10 +108,6 @@ export default function EntradaMaterialScreen() {
 
 
     // ===== CARREGAR DADOS =====
-    useFocusEffect(
-        useCallback(() => {
-            loadData();
-        }, []));
 
     useFocusEffect(
         useCallback(() => {
@@ -120,7 +124,8 @@ export default function EntradaMaterialScreen() {
                 const materiais = JSON.parse(registrosExistentes);
 
                 // 🔥 FILTRO MÁGICO: Traz TODOS que AINDA NÃO FORAM USADOS
-                const materiaisParaMostrar = materiais.filter((m: any) => !m.usado);
+               // Ele puxa tudo que não foi usado, MAS IGNORA as misturas prontas
+                const materiaisParaMostrar = materiais.filter((m: any) => !m.usado && m.tipoMaterial !== 'Mistura Preparada');      
 
                 // Ordena do mais recente para o mais antigo
                 const materiaisOrdenados = materiaisParaMostrar.sort((a: any, b: any) => Number(b.id) - Number(a.id));
@@ -160,12 +165,48 @@ export default function EntradaMaterialScreen() {
             setLoading(false);
         }
     };
+
     const formatarData = (text: string) => {
         let formatted = text.replace(/\D/g, '');
         if (formatted.length <= 2) return formatted;
         if (formatted.length <= 4) return formatted.slice(0, 2) + '/' + formatted.slice(2);
         return formatted.slice(0, 2) + '/' + formatted.slice(2, 4) + '/' + formatted.slice(4, 8);
     };
+        // ===== 🔥 LÓGICA DE FILTRAGEM POR DATA =====
+        // ===== 🔥 LÓGICA DE FILTRAGEM POR DATA E MTR =====
+    const entradasFiltradas = useMemo(() => {
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+
+        return entries.filter(entry => {
+            // 1. Filtro de Busca por MTR (Se tiver algo digitado)
+            if (buscaMTR.trim() !== '') {
+                const mtr = entry.numeroMTR ? entry.numeroMTR.toLowerCase() : '';
+                // Se o MTR não contiver o texto buscado, já descarta este item
+                if (!mtr.includes(buscaMTR.toLowerCase().trim())) {
+                    return false; 
+                }
+            }
+
+            // 2. Filtro de Período
+            if (filtroPeriodo === 'todos') return true;
+
+            const [dia, mes, ano] = entry.data.split('/');
+            if (!dia || !mes || !ano) return true;
+
+            const dataEntry = new Date(Number(ano), Number(mes) - 1, Number(dia));
+            dataEntry.setHours(0, 0, 0, 0);
+
+            const diffTime = hoje.getTime() - dataEntry.getTime();
+            const diffDias = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+            if (filtroPeriodo === 'hoje') return diffDias === 0;
+            if (filtroPeriodo === 'semana') return diffDias >= 0 && diffDias <= 7;
+            if (filtroPeriodo === 'mes') return diffDias >= 0 && diffDias <= 30;
+            
+            return true;
+        });
+    }, [entries, filtroPeriodo, buscaMTR]); // <-- Não esqueça de adicionar o buscaMTR aqui no array de dependências
 
     const validarData = (data: string): boolean => {
         if (data.length !== 10) return false;
@@ -280,17 +321,31 @@ export default function EntradaMaterialScreen() {
         };
 
         try {
-            let novaLista = [...entries];
+            // 🔥 CORREÇÃO CRÍTICA: Buscar TODOS os materiais do banco primeiro
+            const registrosExistentes = await AsyncStorage.getItem('materiaisRegistrados');
+            let todosMateriais: MaterialEntry[] = registrosExistentes ? JSON.parse(registrosExistentes) : [];
+
             if (editingId) {
-                novaLista = novaLista.map(item => item.id === editingId ? newEntry : item);
+                // Atualiza o item no banco completo
+                todosMateriais = todosMateriais.map(item => item.id === editingId ? newEntry : item);
             } else {
-                novaLista = [newEntry, ...novaLista]; // Adiciona no topo da lista
+                // Adiciona o novo item no banco completo
+                todosMateriais.push(newEntry);
             }
 
-            await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novaLista));
+            // Salva o banco completo (sem perder os usados e as misturas)
+            await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(todosMateriais));
             await syncService.adicionarFila('material', newEntry);
 
-            setEntries(novaLista);
+            // Atualiza apenas a lista visual da tela (entries)
+            let novaListaVisual = [...entries];
+            if (editingId) {
+                novaListaVisual = novaListaVisual.map(item => item.id === editingId ? newEntry : item);
+            } else {
+                novaListaVisual = [newEntry, ...novaListaVisual]; // Adiciona no topo da lista visual
+            }
+
+            setEntries(novaListaVisual);
             resetForm();
 
             Alert.alert('Sucesso! ✅', editingId ? 'Registro atualizado!' : 'Material registrado!');
@@ -313,6 +368,7 @@ export default function EntradaMaterialScreen() {
     };
 
     // ===== LÓGICA DE EXCLUSÃO DE MATERIAL =====
+        // ===== LÓGICA DE EXCLUSÃO DE MATERIAL =====
     const handleDelete = (id: string) => {
         Alert.alert(
             'Excluir Material',
@@ -334,7 +390,7 @@ export default function EntradaMaterialScreen() {
                                 // 3. Salva no AsyncStorage
                                 await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novosMateriais));
 
-                                // 4. Atualiza o estado da tela (se o seu estado chamar setEntries ou setMateriais, ajuste aqui)
+                                // 4. Atualiza o estado da tela
                                 setEntries(novosMateriais);
 
                                 Alert.alert('Sucesso', 'Material excluído apenas deste aparelho.');
@@ -363,8 +419,12 @@ export default function EntradaMaterialScreen() {
                                 // 4. Atualiza o estado da tela
                                 setEntries(novosMateriais);
 
-                                // 🔥 5. Adiciona na fila de sincronização para apagar no servidor
-                                await syncService.adicionarFila('material_deletado' as any, { id });
+                                // 🔥 5. MUDANÇA AQUI: Adicionamos deletado: true para o backend reconhecer!
+                                // Usamos 'material' para cair na mesma rota do sync-materiais.ts
+                                await syncService.adicionarFila('material' as any, { 
+                                    id: id,
+                                    deletado: true 
+                                });
 
                                 Alert.alert('Sucesso', 'Material excluído e exclusão enviada para a nuvem.');
                             }
@@ -402,7 +462,7 @@ export default function EntradaMaterialScreen() {
     const mtrIsOptional = isDestinoPiscinao(formData.destino);
     const mtrObrigatorio = isMtrObrigatorio();
 
-    return (
+       return (
         <SafeAreaView style={styles.container}>
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
@@ -613,11 +673,65 @@ export default function EntradaMaterialScreen() {
                     </TouchableOpacity>
                 )}
 
-                {/* LISTAGEM */}
+                {/* 🔥 LISTAGEM ATUALIZADA COM FILTROS */}
+                                {/* 🔥 LISTAGEM ATUALIZADA COM FILTROS E BUSCA */}
                 <View style={styles.listSection}>
-                    <Text style={styles.listTitle}>Materiais Pendentes ({entries.length})</Text>
-                    {entries.length > 0 ? (
-                        entries.slice(0, 5).map((item) => (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <Text style={[styles.listTitle, { marginBottom: 0 }]}>Últimos Registros</Text>
+                        <Text style={{ color: PALETTE.cinza, fontSize: 13, fontWeight: 'bold' }}>
+                            {entradasFiltradas.length} {entradasFiltradas.length === 1 ? 'item' : 'itens'}
+                        </Text>
+                    </View>
+
+                    {/* 🔥 NOVO: CAMPO DE BUSCA POR MTR */}
+                    <View style={[styles.inputBox, { marginBottom: 12, height: 48, backgroundColor: PALETTE.branco }]}>
+                        <MaterialCommunityIcons name="magnify" size={20} color={PALETTE.cinza} style={styles.inputIcon} />
+                        <RNTextInput
+                            style={[styles.input, { fontSize: 14 }]}
+                            placeholder="Buscar por número do MTR..."
+                            placeholderTextColor={PALETTE.cinza}
+                            value={buscaMTR}
+                            onChangeText={setBuscaMTR}
+                        />
+                        {/* Botão de limpar busca (só aparece se tiver texto) */}
+                        {buscaMTR.length > 0 && (
+                            <TouchableOpacity onPress={() => setBuscaMTR('')} style={{ padding: 4 }}>
+                                <MaterialCommunityIcons name="close-circle" size={20} color={PALETTE.cinzaClaro} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {/* BOTÕES DE FILTRO */}
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16, paddingBottom: 4 }}>
+                        <TouchableOpacity 
+                            style={[styles.filterChip, filtroPeriodo === 'hoje' && styles.filterChipActive]} 
+                            onPress={() => setFiltroPeriodo('hoje')}
+                        >
+                            <Text style={[styles.filterChipText, filtroPeriodo === 'hoje' && styles.filterChipTextActive]}>Hoje</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.filterChip, filtroPeriodo === 'semana' && styles.filterChipActive]} 
+                            onPress={() => setFiltroPeriodo('semana')}
+                        >
+                            <Text style={[styles.filterChipText, filtroPeriodo === 'semana' && styles.filterChipTextActive]}>7 Dias</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.filterChip, filtroPeriodo === 'mes' && styles.filterChipActive]} 
+                            onPress={() => setFiltroPeriodo('mes')}
+                        >
+                            <Text style={[styles.filterChipText, filtroPeriodo === 'mes' && styles.filterChipTextActive]}>30 Dias</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.filterChip, filtroPeriodo === 'todos' && styles.filterChipActive]} 
+                            onPress={() => setFiltroPeriodo('todos')}
+                        >
+                            <Text style={[styles.filterChipText, filtroPeriodo === 'todos' && styles.filterChipTextActive]}>Todos</Text>
+                        </TouchableOpacity>
+                    </ScrollView>
+
+                    {/* LISTA RENDERIZADA */}
+                    {entradasFiltradas.length > 0 ? (
+                        entradasFiltradas.map((item) => (
                             <MaterialCard
                                 key={item.id}
                                 item={item}
@@ -628,8 +742,10 @@ export default function EntradaMaterialScreen() {
                         ))
                     ) : (
                         <View style={styles.emptyState}>
-                            <MaterialCommunityIcons name="inbox-remove" size={48} color={PALETTE.cinzaClaro} style={{ marginBottom: 16 }} />
-                            <Text style={styles.emptyText}>Nenhum material registrado</Text>
+                            <MaterialCommunityIcons name={buscaMTR ? "text-search" : "inbox-remove"} size={48} color={PALETTE.cinzaClaro} style={{ marginBottom: 16 }} />
+                            <Text style={styles.emptyText}>
+                                {buscaMTR ? `Nenhum MTR encontrado com "${buscaMTR}"` : 'Nenhum material encontrado neste período.'}
+                            </Text>
                         </View>
                     )}
                 </View>
@@ -932,4 +1048,12 @@ const styles = StyleSheet.create({
     modalBtnCancelarText: { fontWeight: '700', color: PALETTE.cinza, fontSize: 15 },
     modalBtnConfirmar: { flex: 1, paddingVertical: 14, backgroundColor: PALETTE.verdePrimario, borderRadius: 12, alignItems: 'center' },
     modalBtnConfirmarText: { fontWeight: '700', color: PALETTE.branco, fontSize: 15 },
+
+        // Estilos dos Filtros
+    filterChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: PALETTE.verdeClaro, borderWidth: 1, borderColor: PALETTE.cinzaClaro, marginRight: 8 },
+    filterChipActive: { backgroundColor: PALETTE.verdeCard, borderColor: PALETTE.verdePrimario, borderWidth: 1.5 },
+    filterChipText: { fontSize: 13, color: PALETTE.cinza, fontWeight: '600' },
+    filterChipTextActive: { color: PALETTE.verdePrimario, fontWeight: 'bold' },
 });
+
+ 

@@ -142,16 +142,32 @@ export default function NovaLeiraScreen() {
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [buscaLeira, setBuscaLeira] = useState('');
+  const [numeroLeiraManual, setNumeroLeiraManual] = useState('');
+
 
   // Estados Modo Manual
   const [modoManual, setModoManual] = useState(false);
+
   const [pesoManualBio, setPesoManualBio] = useState('');
   const [pesoManualBagaco, setPesoManualBagaco] = useState('12');
   const [dataManual, setDataManual] = useState(new Date().toLocaleDateString('pt-BR'));
 
-  // Estados Seleção de Piscinão
+  
+  // Estados Seleção de Piscinão / Local
   const [piscinaoSelecionado, setPiscinaoSelecionado] = useState('Piscinão 1');
-  const [listaPiscinoes, setListaPiscinoes] = useState(['Piscinão 1', 'Piscinão 2', 'Piscinão 3', 'Piscinão 4']);
+  const [listaPiscinoes, setListaPiscinoes] = useState(['Piscinão 1', 'Piscinão 2', 'Piscinão 3', 'Piscinão 4', 'Pátio de Mistura', 'Depósito 1', 'Depósito 2']);
+  const [showModalDestino, setShowModalDestino] = useState(false);
+
+  // 🔥 ADICIONE ESTES ESTADOS AQUI (Eles resolvem o erro do estoquePatio)
+  const [estoquePatio, setEstoquePatio] = useState(0);
+  const [estoqueDep1, setEstoqueDep1] = useState(0);
+  const [estoqueDep2, setEstoqueDep2] = useState(0);
+  const [mtrsPatio, setMtrsPatio] = useState<string[]>([]);
+  const [mtrsDep1, setMtrsDep1] = useState<string[]>([]);
+  const [mtrsDep2, setMtrsDep2] = useState<string[]>([]);
+  const [estoqueBagaco, setEstoqueBagaco] = useState(0); // 🔥 ADICIONE ESTA LINHA
+  
+
 
   // Modal Novo Piscinão
   const [showModalNovoPiscinao, setShowModalNovoPiscinao] = useState(false);
@@ -163,80 +179,77 @@ export default function NovaLeiraScreen() {
     }, [])
   );
 
-    const loadData = async () => {
+  React.useEffect(() => {
+    if (showForm) {
+      const proximoNumero = leiras.length > 0 ? Math.max(...leiras.map(l => l.numeroLeira)) + 1 : 1;
+      setNumeroLeiraManual(proximoNumero.toString());
+    }
+  }, [showForm, leiras]);
+
+  const loadData = async () => {
     try {
       setLoading(true);
 
-      // 
-      // 1. CARREGAR MATERIAIS (100% LOCAL)
-      // 
       const materiaisRegistrados = await AsyncStorage.getItem('materiaisRegistrados');
       const materiais = materiaisRegistrados ? JSON.parse(materiaisRegistrados) : [];
 
+      let patio = 0; let dep1 = 0; let dep2 = 0; let bagaco = 0;
+      let mPatio: string[] = []; let mDep1: string[] = []; let mDep2: string[] = [];
+
       const biossolidosDisponiveis = materiais.filter((item: any) => {
+        if (item.usado) return false;
+
+        const destinoItem = item.destino ? item.destino.trim() : '';
+
+        // Lógica da Mistura
+        if (item.tipoMaterial === 'Mistura Preparada' || ['Pátio de Mistura', 'Depósito 1', 'Depósito 2'].includes(destinoItem)) {
+          const peso = parsePeso(item.peso); 
+          if (destinoItem === 'Pátio de Mistura') { patio += peso; if (item.mtrsOriginais) mPatio.push(...item.mtrsOriginais); }
+          else if (destinoItem === 'Depósito 1') { dep1 += peso; if (item.mtrsOriginais) mDep1.push(...item.mtrsOriginais); }
+          else if (destinoItem === 'Depósito 2') { dep2 += peso; if (item.mtrsOriginais) mDep2.push(...item.mtrsOriginais); }
+          return false; 
+        }
+
+        // 🔥 LÓGICA DO BAGAÇO: Soma o estoque e esconde da lista
+        if (item.tipoMaterial && item.tipoMaterial.includes('Bagaço')) {
+          bagaco += parsePeso(item.peso);
+          return false;
+        }
+
         const tipo = item.tipoMaterial ? item.tipoMaterial.toLowerCase() : '';
         const origem = item.origem ? item.origem.toLowerCase() : '';
-        const destino = item.destino ? item.destino.toLowerCase() : '';
         const mtr = item.numeroMTR ? item.numeroMTR.toLowerCase() : '';
 
         const ehBiossolido = tipo.includes('bio') || tipo.includes('lodo');
-        
-        const ehPiscinao =
-          destino.includes('piscin') ||
-          destino.includes('estoque') ||
-          origem.includes('piscin') ||
-          origem.includes('manual') ||
-          tipo.includes('piscin') ||
-          mtr.includes('manual');
+        const ehPiscinao = destinoItem.toLowerCase().includes('piscin') || destinoItem.toLowerCase().includes('estoque') || origem.includes('piscin') || origem.includes('manual') || tipo.includes('piscin') || mtr.includes('manual');
 
-        // 🔥 REGRA NOVA: Só traz o material se ele AINDA NÃO FOI USADO
-        const naoFoiUsado = !item.usado;
-
-        // Retorna apenas se for biossólido, não for de piscinão e NÃO ESTIVER USADO
-        return ehBiossolido && !ehPiscinao && naoFoiUsado;
+        return ehBiossolido && !ehPiscinao;
       });
 
-      // Ordena os disponíveis (mais novos no topo)
-      const biossolidosOrdenados = biossolidosDisponiveis.sort((a: any, b: any) => Number(b.id) - Number(a.id));
+      setEstoquePatio(patio); setEstoqueDep1(dep1); setEstoqueDep2(dep2); 
+      setEstoqueBagaco(bagaco); // 🔥 ATUALIZA O ESTADO DO BAGAÇO
       
-      // Atualiza a tela com os materiais filtrados
+      setMtrsPatio([...new Set(mPatio)]); setMtrsDep1([...new Set(mDep1)]); setMtrsDep2([...new Set(mDep2)]);
+      
+      const biossolidosOrdenados = biossolidosDisponiveis.sort((a: any, b: any) => Number(b.id) - Number(a.id));
       setBiossólidos(biossolidosOrdenados);
 
-      // 
-      // 2. CARREGAR LEIRAS PARA A LISTA INFERIOR (Apenas ativas)
-      // 
+      // Carregar Leiras
       const leirasRegistradas = await AsyncStorage.getItem('leirasFormadas');
       const leirasData = leirasRegistradas ? JSON.parse(leirasRegistradas) : [];
+      const leirasAtivas = leirasData.filter((l: any) => !['arquivada', 'finalizada'].includes(l.status?.toLowerCase() || ''));
+      setLeiras(leirasAtivas.sort((a: any, b: any) => Number(b.id) - Number(a.id)));
 
-      const leirasAtivas = leirasData.filter((l: any) => {
-        const status = l.status?.toLowerCase() || '';
-        return !['arquivada', 'finalizada'].includes(status);
-      });
-     
-      const leirasOrdenadas = leirasAtivas.sort((a: any, b: any) => Number(b.id) - Number(a.id));
-      setLeiras(leirasOrdenadas);
-
-      // 
-      // 3. LÓGICA DE DESTINOS/PISCINÕES
-      // 
+      // Destinos
       const destinosSalvos = await AsyncStorage.getItem('listaDestinos');
       if (destinosSalvos) {
         const todos = JSON.parse(destinosSalvos);
-        const soPiscinoes = todos.filter((d: string) =>
-          d.toLowerCase().includes('piscin') || d.toLowerCase().includes('tanque')
-        );
-
-        if (soPiscinoes.length > 0) {
-          const padroes = ['Piscinão 1', 'Piscinão 2', 'Piscinão 3', 'Piscinão 4'];
-          const listaFinal = Array.from(new Set([...padroes, ...soPiscinoes]));
-          setListaPiscinoes(listaFinal);
-
-          if (!listaFinal.includes(piscinaoSelecionado)) {
-            setPiscinaoSelecionado(listaFinal[0]);
-          }
-        }
+        const locaisValidos = todos.filter((d: string) => d.toLowerCase().includes('piscin') || d.toLowerCase().includes('tanque') || d.toLowerCase().includes('pátio') || d.toLowerCase().includes('depósito'));
+        const padroes = ['Piscinão 1', 'Piscinão 2', 'Piscinão 3', 'Piscinão 4', 'Pátio de Mistura', 'Depósito 1', 'Depósito 2'];
+        const listaFinal = Array.from(new Set([...padroes, ...locaisValidos]));
+        setListaPiscinoes(listaFinal);
+        if (!listaFinal.includes(piscinaoSelecionado)) setPiscinaoSelecionado(listaFinal[0]);
       }
-
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível carregar os dados');
     } finally {
@@ -279,57 +292,106 @@ export default function NovaLeiraScreen() {
     }
   };
   
-
-    const handleFormarLeira = async () => {
+  const handleFormarLeira = async () => {
     let novaLeira: Leira;
+    const isGranel = ['Pátio de Mistura', 'Depósito 1', 'Depósito 2'].includes(piscinaoSelecionado);
+    
+    // 🔥 CAPTURA E VALIDA O NÚMERO DA LEIRA
+    const numeroFinal = parseInt(numeroLeiraManual);
+    if (!numeroFinal || numeroFinal <= 0) {
+      Alert.alert('Atenção', 'Informe um número de leira válido.');
+      return;
+    }
+
+    // 🔥 VERIFICA SE O NÚMERO JÁ EXISTE
+    if (leiras.some(l => l.numeroLeira === numeroFinal)) {
+      Alert.alert('Atenção', `A Leira #${numeroFinal} já existe. Por favor, escolha outro número.`);
+      return;
+    }
+
+    // Variável para saber quanto de bagaço vamos descontar
+    let bagacoUtilizado = 0;
 
     if (modoManual) {
       const pesoBio = parsePeso(pesoManualBio);
-      const pesoBagaco = parsePeso(pesoManualBagaco);
+      const pesoBagaco = parsePeso(pesoManualBagaco); 
+      bagacoUtilizado = pesoBagaco;
 
-      if (pesoBio <= 0) { Alert.alert('Atenção', 'Informe o peso do Biossólido/Piscinão.'); return; }
-      if (pesoBagaco <= 0) { Alert.alert('Atenção', 'Informe o peso do Bagaço.'); return; }
+      if (pesoBio <= 0) { Alert.alert('Atenção', 'Informe o peso do material.'); return; }
       if (!dataManual.trim()) { Alert.alert('Atenção', 'Informe a data de formação.'); return; }
 
-      const tipoFormacaoReal = piscinaoSelecionado;
+      // Validação do Estoque de Bagaço
+      if (pesoBagaco > estoqueBagaco) {
+        Alert.alert('Estoque Insuficiente', `Você tem apenas ${estoqueBagaco.toFixed(2)}t de bagaço disponível.`);
+        return;
+      }
 
-      const itemManual: BiossólidoEntry = {
-        id: `manual-${Date.now()}`,
-        data: dataManual,
-        numeroMTR: 'MANUAL',
-        peso: pesoBio.toString(),
-        origem: 'Estoque Interno',
-        destino: piscinaoSelecionado,
-        tipoMaterial: 'Biossólido'
-      };
+      if (isGranel) {
+        let estoqueDisponivel = 0;
+        let mtrsHerdados: string[] = [];
 
-      novaLeira = {
-        id: Date.now().toString(),
-        numeroLeira: leiras.length + 1,
-        lote: calcularLote([]),
-        dataFormacao: dataManual,
-        biossólidos: [itemManual],
-        bagaço: pesoBagaco,
-        status: 'formada',
-        totalBiossólido: pesoBio,
-        tipoFormacao: tipoFormacaoReal,
-        origemPiscinao: tipoFormacaoReal
-      };
+        if (piscinaoSelecionado === 'Pátio de Mistura') { estoqueDisponivel = estoquePatio; mtrsHerdados = mtrsPatio; } 
+        else if (piscinaoSelecionado === 'Depósito 1') { estoqueDisponivel = estoqueDep1; mtrsHerdados = mtrsDep1; } 
+        else if (piscinaoSelecionado === 'Depósito 2') { estoqueDisponivel = estoqueDep2; mtrsHerdados = mtrsDep2; }
 
+        if (pesoBio > estoqueDisponivel) {
+          Alert.alert('Estoque Insuficiente', `Apenas ${estoqueDisponivel.toFixed(2)}t disponíveis no ${piscinaoSelecionado}.`);
+          return;
+        }
+
+        novaLeira = {
+          id: Date.now().toString(),
+          numeroLeira: numeroFinal, // 🔥 USA O NÚMERO DIGITADO
+          lote: calcularLote([]),
+          dataFormacao: dataManual,
+          status: 'formada',
+          pesoFormacao: pesoBio,
+          origemMaterial: piscinaoSelecionado,
+          mtrsOriginais: mtrsHerdados,
+          biossólidos: [],
+          bagaço: pesoBagaco,
+          totalBiossólido: pesoBio,
+          tipoFormacao: piscinaoSelecionado 
+        } as any;
+      } else {
+        const itemManual: BiossólidoEntry = {
+          id: `manual-${Date.now()}`, data: dataManual, numeroMTR: 'MANUAL', peso: pesoBio.toString(), origem: 'Estoque Interno', destino: piscinaoSelecionado, tipoMaterial: 'Biossólido'
+        };
+
+        novaLeira = {
+          id: Date.now().toString(),
+          numeroLeira: numeroFinal, // 🔥 USA O NÚMERO DIGITADO
+          lote: calcularLote([]),
+          dataFormacao: dataManual,
+          biossólidos: [itemManual],
+          bagaço: pesoBagaco,
+          status: 'formada',
+          totalBiossólido: pesoBio,
+          tipoFormacao: piscinaoSelecionado,
+          origemPiscinao: piscinaoSelecionado
+        };
+      }
     } else {
+      bagacoUtilizado = 12; // MTR usa 12t fixo
+      
       if (selectedBiossólidos.length < 3 || selectedBiossólidos.length > 4) {
         Alert.alert('Atenção', 'Selecione 3 ou 4 viagens para formar a leira.');
         return;
       }
 
+      // Validação do Estoque de Bagaço para MTR
+      if (bagacoUtilizado > estoqueBagaco) {
+        Alert.alert('Estoque Insuficiente', `São necessárias 12t de bagaço, mas você tem apenas ${estoqueBagaco.toFixed(2)}t.`);
+        return;
+      }
+
       const biossólidosSelecionados = biossólidos.filter((item) => selectedBiossólidos.includes(item.id));
       const totalBiossólido = biossólidosSelecionados.reduce((acc, item) => acc + parsePeso(item.peso), 0);
-      const lote = calcularLote(biossólidosSelecionados);
 
       novaLeira = {
         id: Date.now().toString(),
-        numeroLeira: leiras.length + 1,
-        lote: lote,
+        numeroLeira: numeroFinal, // 🔥 USA O NÚMERO DIGITADO
+        lote: calcularLote(biossólidosSelecionados),
         dataFormacao: new Date().toLocaleDateString('pt-BR'),
         biossólidos: biossólidosSelecionados,
         bagaço: 12,
@@ -340,51 +402,104 @@ export default function NovaLeiraScreen() {
     }
 
     try {
-      // 1. Salva a nova leira no banco local
       const leirasRegistradas = await AsyncStorage.getItem('leirasFormadas');
       const leirasData = leirasRegistradas ? JSON.parse(leirasRegistradas) : [];
       leirasData.push(novaLeira);
       await AsyncStorage.setItem('leirasFormadas', JSON.stringify(leirasData));
-
-      // 2. Adiciona a leira na fila de sincronização
       await syncService.adicionarFila('leira', novaLeira);
 
-      // 3. ATUALIZA OS MATERIAIS (APLICA O CARIMBO)
-      if (!modoManual) {
-        const materiaisRegistrados = await AsyncStorage.getItem('materiaisRegistrados');
-        if (materiaisRegistrados) {
-          let materiais = JSON.parse(materiaisRegistrados);
-          
-          // 🔥 MUDANÇA AQUI: Em vez de filtrar (apagar), nós mapeamos (atualizamos)
-          materiais = materiais.map((item: any) => {
-            if (selectedBiossólidos.includes(item.id)) {
-              return { ...item, usado: true }; // 👈 Aplica o carimbo mágico!
-            }
-            return item; // Mantém os outros intactos
+      const materiaisRegistrados = await AsyncStorage.getItem('materiaisRegistrados');
+      if (materiaisRegistrados) {
+        let materiais = JSON.parse(materiaisRegistrados);
+        
+        // 1. DESCONTA O BAGAÇO
+        if (bagacoUtilizado > 0) {
+           const bagacoDisponivel = materiais.filter((m: any) => m.tipoMaterial && m.tipoMaterial.includes('Bagaço') && !m.usado);
+           
+           materiais = materiais.map((m: any) => {
+             if (bagacoDisponivel.some((b: any) => b.id === m.id)) {
+               const atualizado = { ...m, usado: true, sincronizado: false };
+               syncService.adicionarFila('material', atualizado);
+               return atualizado;
+             }
+             return m;
+           });
+
+           const saldoRestanteBagaco = estoqueBagaco - bagacoUtilizado;
+           if (saldoRestanteBagaco > 0) {
+             const loteRestanteBagaco = {
+               id: `bagaco-${Date.now()}`,
+               data: modoManual ? dataManual : new Date().toLocaleDateString('pt-BR'),
+               tipoMaterial: 'Bagaço de Cana',
+               numeroMTR: 'SALDO REMANESCENTE',
+               peso: saldoRestanteBagaco.toFixed(2),
+               origem: 'Estoque Interno',
+               destino: 'Depósito',
+               sincronizado: false,
+               usado: false,
+               mtrsOriginais: []
+             };
+             materiais.push(loteRestanteBagaco);
+             await syncService.adicionarFila('material', loteRestanteBagaco);
+           }
+        }
+
+        // 2. DESCONTA O PÁTIO/DEPÓSITO
+        if (modoManual && isGranel) {
+          const lotesDaOrigem = materiais.filter((m: any) => {
+            const destinoItem = m.destino ? m.destino.trim() : '';
+            const isMistura = m.tipoMaterial === 'Mistura Preparada' || ['Pátio de Mistura', 'Depósito 1', 'Depósito 2'].includes(destinoItem);
+            return isMistura && destinoItem === piscinaoSelecionado && !m.usado;
           });
           
-          // Salva o banco de materiais com os itens agora carimbados
-          await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(materiais));
+          materiais = materiais.map((m: any) => {
+            if (lotesDaOrigem.some((l: any) => l.id === m.id)) {
+              const atualizado = { ...m, usado: true, sincronizado: false };
+              syncService.adicionarFila('material', atualizado);
+              return atualizado;
+            }
+            return m;
+          });
+
+          const saldoRestante = (piscinaoSelecionado === 'Pátio de Mistura' ? estoquePatio : piscinaoSelecionado === 'Depósito 1' ? estoqueDep1 : estoqueDep2) - parsePeso(pesoManualBio);
           
-          // 💡 Opcional: Se você quiser que o Supabase atualize o material na nuvem agora, 
-          // você pode adicionar os materiais carimbados na fila de sync também:
-          const materiaisCarimbados = materiais.filter((m: any) => selectedBiossólidos.includes(m.id));
-          for (const mat of materiaisCarimbados) {
-            await syncService.adicionarFila('material', mat);
+          if (saldoRestante > 0) {
+            const loteRestante = {
+              id: `mistura-${Date.now() + 1}`, 
+              data: dataManual, 
+              tipoMaterial: 'Mistura Preparada', 
+              numeroMTR: 'SALDO REMANESCENTE', 
+              peso: saldoRestante.toFixed(2), 
+              origem: 'Processo Interno', 
+              destino: piscinaoSelecionado, 
+              sincronizado: false, 
+              usado: false, 
+              mtrsOriginais: (novaLeira as any).mtrsOriginais || []
+            };
+            materiais.push(loteRestante);
+            await syncService.adicionarFila('material', loteRestante);
           }
+        } 
+        // 3. CARIMBA OS CAMINHÕES (MTR)
+        else if (!modoManual) {
+          materiais = materiais.map((item: any) => {
+            if (selectedBiossólidos.includes(item.id)) {
+              const atualizado = { ...item, usado: true }; 
+              syncService.adicionarFila('material', atualizado);
+              return atualizado;
+            }
+            return item; 
+          });
         }
-        
-        // Remove visualmente da tela de Nova Leira
-        setBiossólidos(biossólidos.filter((item) => !selectedBiossólidos.includes(item.id)));
+
+        // Salva tudo de uma vez no final
+        await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(materiais));
       }
 
-      // 4. Atualiza a UI e limpa o formulário
-      setLeiras([...leiras, novaLeira]);
-      setSelectedBiossólidos([]);
-      setPesoManualBio('');
-      setPesoManualBagaco('12');
-      setDataManual(new Date().toLocaleDateString('pt-BR'));
-      setShowForm(false);
+      setPesoManualBio(''); setPesoManualBagaco(''); setDataManual(new Date().toLocaleDateString('pt-BR'));
+      setSelectedBiossólidos([]); setShowForm(false);
+      
+      if (typeof loadData === 'function') await loadData();
 
       Alert.alert('Sucesso! ✅', `Leira #${novaLeira.numeroLeira} formada com sucesso!`);
     } catch (error) {
@@ -474,6 +589,7 @@ export default function NovaLeiraScreen() {
     : [...leirasFiltradas].sort((a, b) => b.numeroLeira - a.numeroLeira).slice(0, 5);
   
 
+  
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -484,7 +600,10 @@ export default function NovaLeiraScreen() {
     );
   }
 
-  return (
+  const isGranel = ['Pátio de Mistura', 'Depósito 1', 'Depósito 2'].includes(piscinaoSelecionado);
+  const saldoAtual = piscinaoSelecionado === 'Pátio de Mistura' ? estoquePatio : piscinaoSelecionado === 'Depósito 1' ? estoqueDep1 : piscinaoSelecionado === 'Depósito 2' ? estoqueDep2 : 0;
+
+    return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -502,7 +621,7 @@ export default function NovaLeiraScreen() {
             <MaterialCommunityIcons name="leaf" size={32} color={PALETTE.terracota} style={styles.infoIcon} />
             <View style={styles.infoContent}>
               <Text style={styles.infoTitle}>Nova Leira</Text>
-              <Text style={styles.infoText}>Use MTRs do estoque ou registre manualmente (Piscinão)</Text>
+              <Text style={styles.infoText}>Use MTRs do estoque ou registre manualmente (Piscinão/Pátio)</Text>
             </View>
           </View>
 
@@ -513,7 +632,22 @@ export default function NovaLeiraScreen() {
 
           {showForm ? (
             <View style={styles.formCard}>
-              <Text style={styles.formTitle}>Nova Leira #{leiras.length + 1}</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Text style={[styles.formTitle, { marginBottom: 0 }]}>Formar Nova Leira</Text>
+              </View>
+
+              {/* 🔥 CAMPO NÚMERO DA LEIRA (COMPARTILHADO PARA OS DOIS MODOS) */}
+              <Text style={styles.inputLabel}>Número da Leira</Text>
+              <View style={[styles.inputWrapper, { marginBottom: 20 }]}>
+                <MaterialCommunityIcons name="identifier" size={20} color={PALETTE.cinza} style={{ marginRight: 8 }} />
+                <RNTextInput
+                  style={styles.input}
+                  value={numeroLeiraManual}
+                  onChangeText={setNumeroLeiraManual}
+                  placeholder="Ex: 105"
+                  keyboardType="numeric"
+                />
+              </View>
 
               <View style={styles.modeSelector}>
                 <TouchableOpacity
@@ -540,33 +674,31 @@ export default function NovaLeiraScreen() {
                     </TouchableOpacity>
                   </View>
 
-                  <View style={styles.piscinaoGrid}>
-                    {listaPiscinoes.map((piscinao) => (
-                      <TouchableOpacity
-                        key={piscinao}
-                        style={[
-                          styles.piscinaoBtn,
-                          piscinaoSelecionado === piscinao && styles.piscinaoBtnActive
-                        ]}
-                        onPress={() => setPiscinaoSelecionado(piscinao)}
-                      >
-                        <MaterialCommunityIcons
-                          name="water"
-                          size={24}
-                          color={piscinaoSelecionado === piscinao ? PALETTE.azulPiscinao : PALETTE.cinza}
-                          style={styles.piscinaoIcon}
-                        />
-                        <Text style={[
-                          styles.piscinaoText,
-                          piscinaoSelecionado === piscinao && styles.piscinaoTextActive
-                        ]}>
-                          {piscinao}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  {/* CAMPO CLICÁVEL (DROPDOWN) */}
+                  <TouchableOpacity 
+                    style={[styles.inputWrapper, { justifyContent: 'space-between', marginBottom: isGranel ? 8 : 16 }]} 
+                    onPress={() => setShowModalDestino(true)}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <MaterialCommunityIcons 
+                        name={piscinaoSelecionado.toLowerCase().includes('piscin') || piscinaoSelecionado.toLowerCase().includes('tanque') ? 'water' : piscinaoSelecionado.toLowerCase().includes('pátio') ? 'pot-mix' : 'warehouse'} 
+                        size={20} 
+                        color={PALETTE.verdePrimario} 
+                        style={{ marginRight: 10 }} 
+                      />
+                      <Text style={styles.input}>{piscinaoSelecionado}</Text>
+                    </View>
+                    <MaterialCommunityIcons name="chevron-down" size={24} color={PALETTE.cinza} />
+                  </TouchableOpacity>
 
-                  <Text style={[styles.inputLabel, { marginTop: 20 }]}>Data de Formação</Text>
+                  {/* 🔥 EXIBIÇÃO DO SALDO DISPONÍVEL (Aparece apenas para Pátio/Depósitos) */}
+                  {isGranel && (
+                    <Text style={{ color: PALETTE.cinza, fontSize: 13, textAlign: 'right', marginBottom: 16, marginTop: -4 }}>
+                      Saldo disponível: <Text style={{ fontWeight: '900', color: PALETTE.verdePrimario }}>{saldoAtual.toFixed(2)} ton</Text>
+                    </Text>
+                  )}
+
+                  <Text style={styles.inputLabel}>Data de Formação</Text>
                   <View style={styles.inputWrapper}>
                     <RNTextInput
                       style={styles.input}
@@ -578,29 +710,38 @@ export default function NovaLeiraScreen() {
                     <MaterialCommunityIcons name="calendar" size={20} color={PALETTE.cinza} />
                   </View>
 
-                  <Text style={styles.inputLabel}>Peso do Material (Piscinão/Bio)</Text>
+                  <Text style={styles.inputLabel}>Peso do Material {isGranel ? '(Mistura Pronta)' : '(Piscinão/Bio)'}</Text>
                   <View style={styles.inputWrapper}>
                     <RNTextInput
                       style={styles.input}
                       value={pesoManualBio}
                       onChangeText={setPesoManualBio}
-                      placeholder="0.0"
+                      placeholder={isGranel ? `Máx: ${saldoAtual.toFixed(2)}` : "0.0"}
                       keyboardType="numeric"
                     />
                     <Text style={styles.unitText}>ton</Text>
                   </View>
 
-                  <Text style={styles.inputLabel}>Peso do Bagaço</Text>
+                  {/* 🔥 CAMPO DE BAGAÇO COM ESTOQUE VISÍVEL */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 16 }}>
+                    <Text style={[styles.inputLabel, { marginTop: 0 }]}>
+                      {isGranel ? 'Peso do Bagaço Extra (Opcional)' : 'Peso do Bagaço (Opcional)'}
+                    </Text>
+                    <Text style={{ color: PALETTE.cinza, fontSize: 12, marginBottom: 8 }}>
+                      Estoque: <Text style={{ fontWeight: 'bold', color: PALETTE.terracota }}>{estoqueBagaco.toFixed(2)}t</Text>
+                    </Text>
+                  </View>
                   <View style={styles.inputWrapper}>
                     <RNTextInput
                       style={styles.input}
                       value={pesoManualBagaco}
                       onChangeText={setPesoManualBagaco}
-                      placeholder="12.0"
+                      placeholder={`Máx: ${estoqueBagaco.toFixed(2)}`}
                       keyboardType="numeric"
                     />
                     <Text style={styles.unitText}>ton</Text>
                   </View>
+
                 </View>
               ) : (
                 <View style={styles.biossólidosList}>
@@ -685,9 +826,7 @@ export default function NovaLeiraScreen() {
             </TouchableOpacity>
           )}
 
-                    <View style={styles.listSection}>
-            
-            {/* 🔥 CABEÇALHO COM TÍTULO E BOTÕES DE FILTRO */}
+          <View style={styles.listSection}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
               <Text style={[styles.listTitle, { marginBottom: 0, flex: 1 }]}>
                 {buscaLeira.trim() ? `Resultados (${leirasParaExibir.length})` : 'Leiras Formadas'}
@@ -698,34 +837,18 @@ export default function NovaLeiraScreen() {
                   style={[styles.filterChip, filtroLeiras === 'hoje' && styles.filterChipActive]}
                   onPress={() => setFiltroLeiras('hoje')}
                 >
-                  <Text style={[styles.filterChipText, filtroLeiras === 'hoje' && styles.filterChipTextActive]}>
-                    Criadas Hoje
-                  </Text>
+                  <Text style={[styles.filterChipText, filtroLeiras === 'hoje' && styles.filterChipTextActive]}>Criadas Hoje</Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity
                   style={[styles.filterChip, filtroLeiras === 'todas' && styles.filterChipActive]}
                   onPress={() => setFiltroLeiras('todas')}
                 >
-                  <Text style={[styles.filterChipText, filtroLeiras === 'todas' && styles.filterChipTextActive]}>
-                    Todas Ativas
-                  </Text>
+                  <Text style={[styles.filterChipText, filtroLeiras === 'todas' && styles.filterChipTextActive]}>Todas Ativas</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* 🔥 BARRA DE BUSCA (Mantida intacta) */}
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: PALETTE.branco,
-              borderWidth: 1,
-              borderColor: PALETTE.cinzaClaro,
-              borderRadius: 12,
-              paddingHorizontal: 12,
-              marginBottom: 16,
-              height: 48
-            }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: PALETTE.branco, borderWidth: 1, borderColor: PALETTE.cinzaClaro, borderRadius: 12, paddingHorizontal: 12, marginBottom: 16, height: 48 }}>
               <MaterialCommunityIcons name="magnify" size={22} color={PALETTE.cinza} />
               <RNTextInput
                 style={{ flex: 1, marginLeft: 8, fontSize: 15, color: PALETTE.preto }}
@@ -741,14 +864,9 @@ export default function NovaLeiraScreen() {
               )}
             </View>
 
-            {/* 🔥 LISTA RENDERIZADA */}
             {leirasParaExibir.length > 0 ? (
               leirasParaExibir.map((leira) => (
-                <LeiraCard
-                  key={leira.id}
-                  leira={leira}
-                  onDelete={() => handleExcluirLeira(leira)}
-                />
+                <LeiraCard key={leira.id} leira={leira} onDelete={() => handleExcluirLeira(leira)} />
               ))
             ) : (
               <View style={{ padding: 20, alignItems: 'center' }}>
@@ -762,10 +880,11 @@ export default function NovaLeiraScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* MODAL DE NOVO PISCINÃO */}
       <Modal visible={showModalNovoPiscinao} transparent animationType="fade" onRequestClose={() => setShowModalNovoPiscinao(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Novo Piscinão</Text>
+            <Text style={styles.modalTitle}>Novo Local</Text>
             <View style={styles.modalInputBox}>
               <RNTextInput
                 style={styles.modalInput}
@@ -783,6 +902,107 @@ export default function NovaLeiraScreen() {
                 <Text style={styles.modalBtnConfirmarText}>Adicionar</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 🔥 NOVO MODAL DE SELEÇÃO DE LOCAL (CATEGORIZADO) */}
+      <Modal visible={showModalDestino} transparent animationType="fade" onRequestClose={() => setShowModalDestino(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Selecione o Local</Text>
+            
+            <ScrollView style={{ maxHeight: 450, marginBottom: 20 }} showsVerticalScrollIndicator={false}>
+              
+              {/* FUNÇÃO PARA RENDERIZAR CADA ITEM */}
+              {(() => {
+                const renderItem = (item: string) => (
+                  <TouchableOpacity 
+                    key={item} 
+                    style={{
+                      paddingVertical: 12,
+                      borderBottomWidth: 1,
+                      borderBottomColor: PALETTE.cinzaClaro,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                    onPress={() => {
+                      setPiscinaoSelecionado(item);
+                      setShowModalDestino(false);
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <MaterialCommunityIcons 
+                        name={item.toLowerCase().includes('piscin') || item.toLowerCase().includes('tanque') ? 'water' : item.toLowerCase().includes('pátio') ? 'pot-mix' : 'warehouse'} 
+                        size={22} 
+                        color={piscinaoSelecionado === item ? PALETTE.verdePrimario : PALETTE.cinza} 
+                        style={{ marginRight: 12 }} 
+                      />
+                      <Text style={{ 
+                        fontSize: 15, 
+                        color: piscinaoSelecionado === item ? PALETTE.verdePrimario : PALETTE.preto,
+                        fontWeight: piscinaoSelecionado === item ? 'bold' : '500'
+                      }}>
+                        {item}
+                      </Text>
+                    </View>
+                    {piscinaoSelecionado === item && (
+                      <MaterialCommunityIcons name="check-circle" size={22} color={PALETTE.verdePrimario} />
+                    )}
+                  </TouchableOpacity>
+                );
+
+                // FILTRANDO AS CATEGORIAS
+                const piscinoes = listaPiscinoes.filter(i => i.toLowerCase().includes('piscin') || i.toLowerCase().includes('tanque'));
+                const patios = listaPiscinoes.filter(i => i.toLowerCase().includes('pátio'));
+                const depositos = listaPiscinoes.filter(i => i.toLowerCase().includes('depósito'));
+                const outros = listaPiscinoes.filter(i => !piscinoes.includes(i) && !patios.includes(i) && !depositos.includes(i));
+
+                return (
+                  <View>
+                    {/* SESSÃO: PISCINÕES */}
+                    {piscinoes.length > 0 && (
+                      <View style={{ marginBottom: 16 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: PALETTE.cinza, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>💧 Piscinões e Tanques</Text>
+                        {piscinoes.map(renderItem)}
+                      </View>
+                    )}
+
+                    {/* SESSÃO: PÁTIO DE MISTURA */}
+                    {patios.length > 0 && (
+                      <View style={{ marginBottom: 16 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: PALETTE.cinza, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>🏗️ Pátio de Mistura</Text>
+                        {patios.map(renderItem)}
+                      </View>
+                    )}
+
+                    {/* SESSÃO: DEPÓSITOS */}
+                    {depositos.length > 0 && (
+                      <View style={{ marginBottom: 16 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: PALETTE.cinza, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>🏭 Depósitos</Text>
+                        {depositos.map(renderItem)}
+                      </View>
+                    )}
+
+                    {/* SESSÃO: OUTROS */}
+                    {outros.length > 0 && (
+                      <View style={{ marginBottom: 16 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: PALETTE.cinza, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>📍 Outros Locais</Text>
+                        {outros.map(renderItem)}
+                      </View>
+                    )}
+                  </View>
+                );
+              })()}
+
+            </ScrollView>
+
+            {/* 🔥 BOTÃO FECHAR RESTAURADO */}
+            <TouchableOpacity style={styles.modalBtnCancelar} onPress={() => setShowModalDestino(false)}>
+              <Text style={styles.modalBtnCancelarText}>Fechar</Text>
+            </TouchableOpacity>
+
           </View>
         </View>
       </Modal>

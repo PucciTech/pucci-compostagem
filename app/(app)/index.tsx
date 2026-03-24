@@ -321,6 +321,9 @@ export default function DashboardScreen() {
             <ActionCard icon="clipboard-text-outline" title="Monitorar" subtitle="Temperaturas" onPress={() => router.push('/(app)/selecionar-leira')} />
             <ActionCard icon="weather-partly-cloudy" title="Clima" subtitle="Registrar chuva" onPress={() => router.push('/(app)/monitorar-clima')} />
             <ActionCard icon="chart-pie" title="Relatórios" subtitle="Visão geral" onPress={() => router.push('/(app)/relatorios')} />
+            <ActionCard icon="pot-mix" title="Misturar" subtitle="Preparar lote" onPress={() => router.push('/(app)/preparar-mistura')} />
+            <ActionCard icon="warehouse" title="Depósitos" subtitle="Estoque curado" onPress={() => router.push('/(app)/deposito')} />
+             <ActionCard icon="flask-outline" title="Enriquecer" subtitle="Adicionar material" onPress={() => router.push('/(app)/enriquecer-leira')} />
           </View>
         </View>
 

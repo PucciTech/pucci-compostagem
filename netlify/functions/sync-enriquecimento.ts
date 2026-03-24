@@ -63,6 +63,10 @@ export const handler: Handler = async (event) => {
         leiraid: item.leiraId,         // Nome exato da coluna (tudo minúsculo)
         data_enriquecimento: dataISO,  // Formato YYYY-MM-DD
         hora_enriquecimento: item.horaEnriquecimento || null,
+        
+        // 🔥 AQUI ESTÁ A NOVA COLUNA QUE ADICIONAMOS!
+        tipo_material: item.tipoMaterial || 'Biossólido',
+        
         peso_anterior: item.pesoAnterior,
         peso_adicionado: item.pesoAdicionado,
         peso_novo: item.pesoNovo,
