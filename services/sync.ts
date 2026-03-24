@@ -118,7 +118,8 @@ export const syncService = {
             observacoes: e.observacoes,
             pesoAnterior: Number(e.peso_anterior || e.pesoAnterior || 0),
             pesoNovo: Number(e.peso_novo || e.pesoNovo || 0),
-            timestamp: e.criado_em ? new Date(e.criado_em).getTime() : Date.now()
+            timestamp: e.criado_em ? new Date(e.criado_em).getTime() : Date.now(),
+            tipoMaterial: e.tipo_material || 'Biossólido', 
           }));
           await AsyncStorage.setItem('leirasEnriquecimentos', JSON.stringify(enriquecimentosFormatados));
         }
