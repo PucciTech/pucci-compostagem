@@ -24,9 +24,10 @@ const PALETTE = {
   cinzaEscuro: '#424242',
   cinzaClaro: '#E0E0E0',
   cinzaClaro2: '#F5F5F5',
+  alerta: '#F57C00',
 };
 
-// 🌟 CONFIGURAÇÃO DE MATERIAIS ATUALIZADA
+// 🌟 CONFIGURAÇÃO DE MATERIAIS (Agora com Depósito 1 e 2 separados)
 const TIPOS_MATERIAL = [
   { 
     id: 'Biossólido', 
@@ -44,20 +45,27 @@ const TIPOS_MATERIAL = [
     bg: '#FFF3E0', 
     exigeMTR: false 
   },
-  // 🔥 NOVAS OPÇÕES ADICIONADAS AQUI
   { 
     id: 'PatioMistura', 
     nome: 'Pátio de Mistura', 
     icone: 'pot-mix', 
-    cor: '#8D6E63', // Marrom terra
+    cor: '#8D6E63',
     bg: '#EFEBE9', 
     exigeMTR: false 
   },
   { 
-    id: 'Deposito', 
-    nome: 'Material do Depósito', 
+    id: 'Deposito1', 
+    nome: 'Depósito 1', 
     icone: 'warehouse', 
-    cor: '#5C6BC0', // Azul acinzentado
+    cor: '#5C6BC0',
+    bg: '#E8EAF6', 
+    exigeMTR: false 
+  },
+  { 
+    id: 'Deposito2', 
+    nome: 'Depósito 2', 
+    icone: 'warehouse', 
+    cor: '#3949AB',
     bg: '#E8EAF6', 
     exigeMTR: false 
   }
@@ -70,8 +78,8 @@ export default function EnriquecerLeiraScreen() {
   const [leiras, setLeiras] = useState<any[]>([]);
   const [leiraSelecionada, setLeiraSelecionada] = useState<any>(null);
   const [materialSelecionado, setMaterialSelecionado] = useState(TIPOS_MATERIAL[0]);
+  const [estoqueDisponivel, setEstoqueDisponivel] = useState<number | null>(null);
   
-  // Estado para o filtro de busca
   const [buscaLeira, setBuscaLeira] = useState('');
 
   const [formData, setFormData] = useState({
@@ -86,16 +94,64 @@ export default function EnriquecerLeiraScreen() {
     carregarLeiras();
   }, []);
 
+  useEffect(() => {
+    calcularEstoqueDisponivel();
+  }, [materialSelecionado]);
+
+  // 🔥 NOVA: Função que calcula quanto tem no estoque (Separando os depósitos)
+   // 🔥 NOVA: Função que calcula quanto tem no estoque (Com Normalizador)
+  const calcularEstoqueDisponivel = async () => {
+    if (materialSelecionado.id === 'Biossólido') {
+      setEstoqueDisponivel(null);
+      return;
+    }
+
+    try {
+      const registros = await AsyncStorage.getItem('materiaisRegistrados');
+      if (registros) {
+        const materiais = JSON.parse(registros);
+        let total = 0;
+
+        materiais.forEach((mat: any) => {
+          if (mat.usado) return; // Ignora o que já foi gasto
+
+          // 🔥 NORMALIZADOR: Tira acentos, espaços e deixa minúsculo
+          const destinoNorm = mat.destino ? String(mat.destino).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') : '';
+          const tipoNorm = mat.tipoMaterial ? String(mat.tipoMaterial).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') : '';
+
+          let atendeFiltro = false;
+          if (materialSelecionado.id === 'Bagaço' && tipoNorm.includes('bagaco')) {
+            atendeFiltro = true;
+          } else if (materialSelecionado.id === 'PatioMistura' && destinoNorm.includes('patio')) {
+            atendeFiltro = true;
+          } else if (materialSelecionado.id === 'Deposito1' && (destinoNorm.includes('deposito1') || tipoNorm.includes('deposito1'))) {
+            atendeFiltro = true;
+          } else if (materialSelecionado.id === 'Deposito2' && (destinoNorm.includes('deposito2') || tipoNorm.includes('deposito2'))) {
+            atendeFiltro = true;
+          }
+
+          if (atendeFiltro) {
+            total += parseFloat(String(mat.peso).replace(',', '.'));
+          }
+        });
+
+        setEstoqueDisponivel(total);
+      } else {
+        setEstoqueDisponivel(0);
+      }
+    } catch (error) {
+      console.error("Erro ao calcular estoque:", error);
+      setEstoqueDisponivel(0);
+    }
+  };
+
   const carregarLeiras = async () => {
     try {
       setLoading(true);
       const leirasRegistradas = await AsyncStorage.getItem('leirasFormadas');
       if (leirasRegistradas) {
         const leirasData = JSON.parse(leirasRegistradas);
-        // Filtra apenas leiras que não estão prontas
         const leirasAtivas = leirasData.filter((l: any) => l.status !== 'pronta');
-        
-        // Ordena da mais nova para a mais velha
         leirasAtivas.sort((a: any, b: any) => Number(b.id) - Number(a.id));
         setLeiras(leirasAtivas);
       }
@@ -124,6 +180,7 @@ export default function EnriquecerLeiraScreen() {
     return total;
   };
 
+    
   const handleSalvar = async () => {
     if (!leiraSelecionada) return Alert.alert('Erro', 'Selecione uma leira primeiro.');
     if (!formData.data.trim()) return Alert.alert('Erro', 'Digite a data.');
@@ -138,9 +195,71 @@ export default function EnriquecerLeiraScreen() {
       return Alert.alert('Atenção', `O número do MTR é obrigatório para ${materialSelecionado.nome}.`);
     }
 
-    Alert.alert("Processando", "Salvando dados...");
+    if (estoqueDisponivel !== null && pesoAdicionado > estoqueDisponivel) {
+      return Alert.alert(
+        'Estoque Insuficiente ⚠️', 
+        `Você está tentando adicionar ${pesoAdicionado} ton, mas só há ${estoqueDisponivel.toFixed(2)} ton disponíveis de ${materialSelecionado.nome} no estoque.`
+      );
+    }
+
+    Alert.alert("Processando", "Salvando dados e atualizando estoque...");
 
     try {
+      // 🔥 LÓGICA: DESCONTAR DO ESTOQUE (FIFO)
+      if (materialSelecionado.id !== 'Biossólido') {
+        const registros = await AsyncStorage.getItem('materiaisRegistrados');
+        if (registros) {
+          let materiais = JSON.parse(registros);
+          let pesoRestante = pesoAdicionado;
+          let materiaisAtualizados = [];
+
+          materiais.sort((a: any, b: any) => Number(a.id) - Number(b.id));
+
+          for (let i = 0; i < materiais.length; i++) {
+            if (pesoRestante <= 0) break;
+            
+            let mat = materiais[i];
+            if (mat.usado) continue;
+
+            // 🔥 NORMALIZADOR: Tira acentos, espaços e deixa minúsculo
+            const destinoNorm = mat.destino ? String(mat.destino).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') : '';
+            const tipoNorm = mat.tipoMaterial ? String(mat.tipoMaterial).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') : '';
+
+            let atendeFiltro = false;
+            if (materialSelecionado.id === 'Bagaço' && tipoNorm.includes('bagaco')) {
+              atendeFiltro = true;
+            } else if (materialSelecionado.id === 'PatioMistura' && destinoNorm.includes('patio')) {
+              atendeFiltro = true;
+            } else if (materialSelecionado.id === 'Deposito1' && (destinoNorm.includes('deposito1') || tipoNorm.includes('deposito1'))) {
+              atendeFiltro = true;
+            } else if (materialSelecionado.id === 'Deposito2' && (destinoNorm.includes('deposito2') || tipoNorm.includes('deposito2'))) {
+              atendeFiltro = true;
+            }
+
+            if (atendeFiltro) {
+              let pesoDisponivel = parseFloat(String(mat.peso).replace(',', '.'));
+              
+              if (pesoDisponivel > pesoRestante) {
+                mat.peso = (pesoDisponivel - pesoRestante).toFixed(2);
+                pesoRestante = 0;
+                materiaisAtualizados.push(mat);
+              } else {
+                pesoRestante -= pesoDisponivel;
+                mat.peso = '0';
+                mat.usado = true;
+                materiaisAtualizados.push(mat);
+              }
+            }
+          }
+
+          await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(materiais));
+
+          for (const mat of materiaisAtualizados) {
+            await syncService.adicionarFila('material', mat);
+          }
+        }
+      }
+
       const pesoAnterior = calcularTotalComEnriquecimentos(leiraSelecionada);
       const pesoNovo = pesoAnterior + pesoAdicionado;
 
@@ -149,7 +268,7 @@ export default function EnriquecerLeiraScreen() {
         leiraId: leiraSelecionada.id,
         dataEnriquecimento: formData.data,
         horaEnriquecimento: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        tipoMaterial: materialSelecionado.id, // Salva o ID (Biossólido, Bagaço, PatioMistura, Deposito)
+        tipoMaterial: materialSelecionado.id,
         pesoAdicionado,
         numeroMTR: materialSelecionado.exigeMTR ? formData.numeroMTR : 'N/A',
         origem: formData.origem || undefined,
@@ -159,13 +278,11 @@ export default function EnriquecerLeiraScreen() {
         timestamp: Date.now(),
       };
 
-      // 1. Salvar no Histórico de Enriquecimentos
       const enriquecimentosRegistrados = await AsyncStorage.getItem('leirasEnriquecimentos');
       const enriquecimentosDataArray = enriquecimentosRegistrados ? JSON.parse(enriquecimentosRegistrados) : [];
       enriquecimentosDataArray.push(novoEnriquecimento);
       await AsyncStorage.setItem('leirasEnriquecimentos', JSON.stringify(enriquecimentosDataArray));
 
-      // 2. Atualizar a Leira
       const leirasRegistradas = await AsyncStorage.getItem('leirasFormadas');
       const leirasData = leirasRegistradas ? JSON.parse(leirasRegistradas) : [];
       const leiraIndex = leirasData.findIndex((l: any) => l.id === leiraSelecionada.id);
@@ -178,7 +295,6 @@ export default function EnriquecerLeiraScreen() {
         await AsyncStorage.setItem('leirasFormadas', JSON.stringify(leirasData));
       }
 
-      // 3. Sincronizar
       await syncService.adicionarFila('enriquecimento', novoEnriquecimento);
       const temInternet = await syncService.verificarInternet();
       
@@ -188,7 +304,7 @@ export default function EnriquecerLeiraScreen() {
 
       Alert.alert(
         'Sucesso! ✅', 
-        `${pesoAdicionado} ton de ${materialSelecionado.nome} adicionadas na Leira #${leiraSelecionada.numeroLeira}.`,
+        `${pesoAdicionado} ton adicionadas na Leira #${leiraSelecionada.numeroLeira}.`,
         [{ text: 'OK', onPress: () => router.back() }]
       );
 
@@ -198,7 +314,6 @@ export default function EnriquecerLeiraScreen() {
     }
   };
 
-  // Lógica que filtra as leiras baseada no texto digitado
   const leirasFiltradas = leiras.filter(leira => {
     const termoBusca = buscaLeira.toLowerCase();
     return (
@@ -223,6 +338,7 @@ export default function EnriquecerLeiraScreen() {
         {/* HEADER */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color={PALETTE.cinzaEscuro} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Enriquecer Leira</Text>
           <View style={styles.backButton} />
@@ -343,9 +459,21 @@ export default function EnriquecerLeiraScreen() {
               </View>
             </View>
 
-            {/* PESO */}
+            {/* PESO COM ESTOQUE DINÂMICO */}
             <View style={styles.formGroup}>
-              <Text style={styles.label}>⚖️ Peso Adicionado (ton)</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={[styles.label, { marginBottom: 0 }]}>⚖️ Peso Adicionado (ton)</Text>
+                
+                {/* 🔥 NOVO: Mostrador de Estoque Dinâmico */}
+                {estoqueDisponivel !== null && (
+                  <View style={{ backgroundColor: estoqueDisponivel <= 0 ? '#FFEBEE' : '#E3F2FD', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                    <Text style={{ fontSize: 11, fontWeight: 'bold', color: estoqueDisponivel <= 0 ? '#D32F2F' : '#1976D2' }}>
+                      Disponível: {estoqueDisponivel.toFixed(2)} ton
+                    </Text>
+                  </View>
+                )}
+              </View>
+              
               <View style={styles.inputBox}>
                 <RNTextInput
                   style={styles.input}
@@ -400,12 +528,19 @@ export default function EnriquecerLeiraScreen() {
               </View>
             </View>
 
-            {/* BOTÃO SALVAR */}
+            {/* BOTÃO SALVAR INTELIGENTE */}
             <TouchableOpacity 
-              style={[styles.submitBtn, { backgroundColor: materialSelecionado.cor }]} 
+              style={[
+                styles.submitBtn, 
+                { backgroundColor: materialSelecionado.cor },
+                (estoqueDisponivel !== null && estoqueDisponivel <= 0) && { opacity: 0.5 }
+              ]} 
               onPress={handleSalvar}
+              disabled={estoqueDisponivel !== null && estoqueDisponivel <= 0}
             >
-              <Text style={styles.submitBtnText}>Confirmar Enriquecimento</Text>
+              <Text style={styles.submitBtnText}>
+                {estoqueDisponivel !== null && estoqueDisponivel <= 0 ? 'Estoque Zerado' : 'Confirmar Enriquecimento'}
+              </Text>
             </TouchableOpacity>
 
           </View>
@@ -437,14 +572,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: PALETTE.cinzaClaro,
   },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: PALETTE.preto,
-  },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, fontSize: 14, color: PALETTE.preto },
 
   emptyBox: { marginHorizontal: 20, padding: 20, backgroundColor: PALETTE.branco, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: PALETTE.cinzaClaro },
   
