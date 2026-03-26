@@ -254,7 +254,7 @@ export default function PrepararMisturaScreen() {
 
         Alert.alert(
             'Confirmar Estorno ⚠️',
-            `Deseja realmente desfazer esta mistura de ${mistura.peso}t?\n\nOs materiais originais (Biossólido e Bagaço) voltarão para o estoque.`,
+            `Deseja realmente desfazer esta mistura de ${mistura.peso}t?\n\nO Biossólido e o Bagaço voltarão separados para os seus estoques de origem.`,
             [
                 { text: 'Cancelar', style: 'cancel' },
                 { 
@@ -267,12 +267,17 @@ export default function PrepararMisturaScreen() {
                             let todosMateriais: MaterialEntry[] = registros ? JSON.parse(registros) : [];
                             const itensParaSincronizar: MaterialEntry[] = [];
 
+                            // 🔥 BLINDAGEM MATEMÁTICA: Garante que os números serão calculados corretamente mesmo se tiverem vírgula
+                            const pesoTotal = parseFloat(String(mistura.peso).replace(',', '.'));
+                            const pesoBagacoDevolver = parseFloat(String(mistura.pesoBagacoUtilizado || 0).replace(',', '.'));
+                            const pesoBioDevolver = pesoTotal - pesoBagacoDevolver;
+
                             // 1. Marca a mistura como deletada
                             const misturaDeletada = { ...mistura, deletado: true, sincronizado: false };
                             itensParaSincronizar.push(misturaDeletada);
                             todosMateriais = todosMateriais.map(m => m.id === mistura.id ? misturaDeletada : m);
 
-                            // 2. Restaura os Biossólidos originais
+                            // 2. Restaura os Biossólidos originais (ou cria um lote de devolução)
                             if (mistura.itensOriginaisIds && mistura.itensOriginaisIds.length > 0) {
                                 todosMateriais = todosMateriais.map(m => {
                                     if (mistura.itensOriginaisIds!.includes(m.id)) {
@@ -282,28 +287,24 @@ export default function PrepararMisturaScreen() {
                                     }
                                     return m;
                                 });
-                            } else {
-                                const pesoBioDevolver = parseFloat(mistura.peso) - (mistura.pesoBagacoUtilizado || 0);
-                                if (pesoBioDevolver > 0) {
-                                    const timestamp = Date.now();
-                                    const devolucaoBio: MaterialEntry = {
-                                        id: timestamp.toString(),
-                                        data: new Date().toLocaleDateString('pt-BR'),
-                                        tipoMaterial: 'Biossólido',
-                                        numeroMTR: mistura.mtrsOriginais ? mistura.mtrsOriginais.join(', ') : 'ESTORNO',
-                                        peso: pesoBioDevolver.toFixed(2),
-                                        origem: 'Estorno de Mistura',
-                                        destino: 'Pátio de Mistura',
-                                        sincronizado: false,
-                                        usado: false
-                                    };
-                                    todosMateriais.push(devolucaoBio);
-                                    itensParaSincronizar.push(devolucaoBio);
-                                }
+                            } else if (pesoBioDevolver > 0) {
+                                const timestamp = Date.now();
+                                const devolucaoBio: MaterialEntry = {
+                                    id: timestamp.toString(),
+                                    data: new Date().toLocaleDateString('pt-BR'),
+                                    tipoMaterial: 'Biossólido',
+                                    numeroMTR: mistura.mtrsOriginais ? mistura.mtrsOriginais.join(', ') : 'ESTORNO',
+                                    peso: pesoBioDevolver.toFixed(2),
+                                    origem: 'Estorno de Mistura',
+                                    destino: 'Pátio de Mistura',
+                                    sincronizado: false,
+                                    usado: false
+                                };
+                                todosMateriais.push(devolucaoBio);
+                                itensParaSincronizar.push(devolucaoBio);
                             }
 
                             // 3. Devolve o Bagaço para o estoque
-                            const pesoBagacoDevolver = mistura.pesoBagacoUtilizado || 0;
                             if (pesoBagacoDevolver > 0) {
                                 const timestamp = Date.now() + 1;
                                 const devolucaoBagaco: MaterialEntry = {
@@ -319,12 +320,8 @@ export default function PrepararMisturaScreen() {
                                 };
                                 todosMateriais.push(devolucaoBagaco);
                                 itensParaSincronizar.push(devolucaoBagaco);
-                            }
-
-                            await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(todosMateriais));
-                            
-                            // 🔥 SENSOR 2: ESTORNO DE MISTURA (ENTRADA DE BAGAÇO)
-                            if (pesoBagacoDevolver > 0) {
+                                
+                                // 📝 SENSOR 2: ESTORNO DE MISTURA (ENTRADA DE BAGAÇO NO EXTRATO)
                                 const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
                                 const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
                                 extrato.push({
@@ -338,15 +335,22 @@ export default function PrepararMisturaScreen() {
                                 await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
                             }
 
+                            await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(todosMateriais));
+
                             for (const item of itensParaSincronizar) {
                                 await syncService.adicionarFila('material', item);
                             }
 
-                            await loadData();
-                            Alert.alert('Sucesso', 'Mistura estornada e materiais devolvidos ao estoque.');
+                            if (typeof loadData === 'function') {
+                                await loadData();
+                            }
+                            
+                            // 🔥 Mostra exatamente quanto devolveu de cada um
+                            Alert.alert('Sucesso ✅', `Mistura estornada!\n\nBiossólido devolvido: ${pesoBioDevolver.toFixed(2)}t\nBagaço devolvido: ${pesoBagacoDevolver.toFixed(2)}t`);
                         } catch (error) {
-                            console.error(error);
+                            console.error("Erro no estorno:", error);
                             Alert.alert('Erro', 'Falha ao estornar a mistura.');
+                        } finally {
                             setLoading(false);
                         }
                     }

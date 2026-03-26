@@ -123,14 +123,33 @@ export default function EntradaMaterialScreen() {
             if (registrosExistentes) {
                 const materiais = JSON.parse(registrosExistentes);
 
-                // 🔥 NOVO FILTRO: Traz TODOS os materiais (usados e não usados)
-                // MAS continua ignorando as "Misturas Preparadas" para não poluir a tela de entrada
-                const materiaisParaMostrar = materiais.filter((m: any) => m.tipoMaterial !== 'Mistura Preparada');      
+                // 🔥 NOVO FILTRO BLINDADO: Ignora tudo que for movimentação interna
+                const materiaisParaMostrar = materiais.filter((m: any) => {
+                    // 1. Ignora misturas
+                    if (m.tipoMaterial === 'Mistura Preparada') return false;
+
+                    const mtr = m.numeroMTR ? m.numeroMTR.toUpperCase() : '';
+                    const origem = m.origem ? m.origem.toUpperCase() : '';
+
+                    // 2. Ignora Saldos, Estornos e Transferências internas
+                    if (
+                        mtr.includes('SALDO REMANESCENTE') || 
+                        mtr.includes('ESTORNO') || 
+                        mtr.includes('TRANSF') || 
+                        origem.includes('ESTOQUE INTERNO') || 
+                        origem.includes('ESTOQUE GERAL') || 
+                        origem.includes('ESTORNO')
+                    ) {
+                        return false;
+                    }
+
+                    return true; // Só passa o que for entrada real de caminhão
+                });      
 
                 // Ordena do mais recente para o mais antigo
                 const materiaisOrdenados = materiaisParaMostrar.sort((a: any, b: any) => Number(b.id) - Number(a.id));
 
-                // Atualiza a tela com todos os materiais
+                // Atualiza a tela com todos os materiais limpos
                 setEntries(materiaisOrdenados);
             } else {
                 setEntries([]);

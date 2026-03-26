@@ -37,16 +37,34 @@ export const syncService = {
         
         // 1. MATERIAIS
         if (result.dados.materiais?.length > 0) {
-          const materiaisFormatados = result.dados.materiais.map((m: any) => ({
-            id: m.id,
-            data: m.data || '',
-            tipoMaterial: m.tipomaterial || 'Biossólido',
-            numeroMTR: m.numeromtr || '',
-            peso: String(m.peso || '0'),
-            origem: m.origem || 'Não informada',
-            destino: m.destino || 'patio',
-            usado: m.usado 
-          }));
+          const materiaisFormatados = result.dados.materiais.map((m: any) => {
+            
+            // 🔥 Tratamento seguro para arrays que podem vir como string do banco
+            let mtrs = [];
+            let itensIds = [];
+            try {
+              mtrs = typeof m.mtrs_originais === 'string' ? JSON.parse(m.mtrs_originais) : (m.mtrs_originais || m.mtrsOriginais || []);
+              itensIds = typeof m.itens_originais_ids === 'string' ? JSON.parse(m.itens_originais_ids) : (m.itens_originais_ids || m.itensOriginaisIds || []);
+            } catch (e) {
+              console.warn('Erro ao fazer parse dos arrays da mistura', e);
+            }
+
+            return {
+              id: m.id,
+              data: m.data || '',
+              tipoMaterial: m.tipomaterial || m.tipoMaterial || 'Biossólido',
+              numeroMTR: m.numeromtr || m.numeroMTR || '',
+              peso: String(m.peso || '0'),
+              origem: m.origem || 'Não informada',
+              destino: m.destino || 'patio',
+              usado: m.usado,
+              
+              // 🔥 RECUPERANDO OS DETALHES DA MISTURA DA NUVEM
+              mtrsOriginais: mtrs,
+              itensOriginaisIds: itensIds,
+              pesoBagacoUtilizado: Number(m.peso_bagaco_utilizado || m.pesoBagacoUtilizado || 0)
+            };
+          });
           await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(materiaisFormatados));
         }
 

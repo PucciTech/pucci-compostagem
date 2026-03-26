@@ -12813,16 +12813,25 @@ var handler = async (event) => {
         data: material.data,
         tipomaterial: material.tipoMaterial,
         numeromtr: material.numeroMTR || null,
-        peso: material.peso,
+        peso: String(material.peso).replace(",", "."),
+        // Garante formatação correta para o banco
         origem: material.origem,
         destino: destinoFinal,
         usado: material.usado || false,
+        // 🔥 AS 3 LINHAS NOVAS AQUI:
+        mtrs_originais: material.mtrsOriginais || [],
+        itens_originais_ids: material.itensOriginaisIds || [],
+        peso_bagaco_utilizado: Number(material.pesoBagacoUtilizado || 0),
         // Campos de controle
         sincronizado: true,
         sincronizado_em: agora,
         atualizado_em: agora
       }, { onConflict: "id" });
-      if (!error) sincronizados++;
+      if (!error) {
+        sincronizados++;
+      } else {
+        console.error(`\u274C Erro ao salvar material ${material.id}:`, error);
+      }
     }
     return {
       statusCode: 200,

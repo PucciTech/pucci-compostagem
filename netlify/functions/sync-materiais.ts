@@ -11,11 +11,15 @@ interface Material {
   data: string;
   tipoMaterial: string;
   numeroMTR: string;
-  peso: number;
+  peso: any; // Alterado para any para aceitar string ou number do app
   origem: string;
   destino?: string;
   deletado?: boolean;
   usado?: boolean; 
+  // 🔥 NOVOS CAMPOS ADICIONADOS AQUI
+  mtrsOriginais?: any[];
+  itensOriginaisIds?: string[];
+  pesoBagacoUtilizado?: number;
 }
 
 const USUARIO_ID = '116609f9-53c2-4289-9a63-0174fad8148e'; 
@@ -59,7 +63,6 @@ export const handler: Handler = async (event) => {
         }
 
         // 💾 CENÁRIO 2: CRIAÇÃO OU EDIÇÃO (UPSERT)
-        // 🔥 Atualizado para o novo padrão
         const destinoFinal = material.destino || 'Pátio Normal';
 
         const { error } = await supabase
@@ -70,10 +73,15 @@ export const handler: Handler = async (event) => {
             data: material.data,
             tipomaterial: material.tipoMaterial,
             numeromtr: material.numeroMTR || null,
-            peso: material.peso,
+            peso: String(material.peso).replace(',', '.'), // Garante formatação correta para o banco
             origem: material.origem,
             destino: destinoFinal,
             usado: material.usado || false, 
+            
+            // 🔥 AS 3 LINHAS NOVAS AQUI:
+            mtrs_originais: material.mtrsOriginais || [],
+            itens_originais_ids: material.itensOriginaisIds || [],
+            peso_bagaco_utilizado: Number(material.pesoBagacoUtilizado || 0),
             
             // Campos de controle
             sincronizado: true,
@@ -81,7 +89,11 @@ export const handler: Handler = async (event) => {
             atualizado_em: agora,
           }, { onConflict: 'id' }); 
 
-        if (!error) sincronizados++;
+        if (!error) {
+            sincronizados++;
+        } else {
+            console.error(`❌ Erro ao salvar material ${material.id}:`, error);
+        }
     }
 
     return {
