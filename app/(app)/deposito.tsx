@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput as RNTextInput, ActivityIndicator, StyleSheet, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput as RNTextInput, ActivityIndicator, StyleSheet, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -19,6 +19,16 @@ interface MaterialEntry {
     mtrsOriginais?: string[];
 }
 
+// 🔥 NOVA INTERFACE PARA O EXTRATO
+interface ExtratoBagacoEntry {
+    id: string;
+    data: string;
+    hora: string;
+    tipo: 'ENTRADA' | 'SAIDA';
+    quantidade: number;
+    motivo: string;
+}
+
 export default function DepositoScreen() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
@@ -30,12 +40,15 @@ export default function DepositoScreen() {
     
     const [lotes, setLotes] = useState<MaterialEntry[]>([]);
     
-    // Estado para controlar qual filtro está ativo
-    const [filtroAtivo, setFiltroAtivo] = useState <'Todos' | 'Depósito 1' | 'Depósito 2' | 'Bagaço'>('Todos');
+    const [filtroAtivo, setFiltroAtivo] = useState < 'Todos' | 'Depósito 1' | 'Depósito 2' | 'Bagaço'>('Todos');
 
     // Estados para Transferência de Bagaço
     const [pesoTransferencia, setPesoTransferencia] = useState('');
     const [destinoTransferencia, setDestinoTransferencia] = useState('Depósito 1');
+
+    // 🔥 ESTADOS DO EXTRATO
+    const [modalExtratoVisivel, setModalExtratoVisivel] = useState(false);
+    const [extratoList, setExtratoList] = useState<ExtratoBagacoEntry[]>([]);
 
     // ===== CARREGAR DADOS =====
     useFocusEffect(
@@ -56,18 +69,15 @@ export default function DepositoScreen() {
                 let dep2 = 0;
                 let bagacoGeral = 0;
 
-                // Pega apenas o que não foi usado
                 const lotesAtivos = materiais.filter(m => !m.usado);
 
                 lotesAtivos.forEach(m => {
                     const peso = parseFloat(m.peso.replace(',', '.'));
-                    // Se está no depósito, soma no depósito (seja mistura ou bagaço)
                     if (m.destino === 'Depósito 1') {
                         dep1 += peso;
                     } else if (m.destino === 'Depósito 2') {
                         dep2 += peso;
                     } else if (m.tipoMaterial.includes('Bagaço')) {
-                        // Se é bagaço e não está nos depósitos, é estoque geral
                         bagacoGeral += peso;
                     }
                 });
@@ -76,7 +86,6 @@ export default function DepositoScreen() {
                 setEstoqueDep2(dep2);
                 setEstoqueBagaco(bagacoGeral);
                 
-                // Lotes para a lista (apenas o que está nos depósitos ou é bagaço geral)
                 const todosLotes = lotesAtivos.filter(m => 
                     m.destino === 'Depósito 1' || 
                     m.destino === 'Depósito 2' || 
@@ -92,7 +101,25 @@ export default function DepositoScreen() {
         }
     };
 
-    // Lógica que filtra a lista baseada no card clicado
+    // 🔥 FUNÇÃO PARA ABRIR O EXTRATO
+    const abrirExtrato = async () => {
+        try {
+            const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+            if (extratoSalvo) {
+                const extrato: ExtratoBagacoEntry[] = JSON.parse(extratoSalvo);
+                // Ordena do mais recente para o mais antigo
+                extrato.sort((a, b) => Number(b.id) - Number(a.id));
+                setExtratoList(extrato);
+            } else {
+                setExtratoList([]);
+            }
+            setModalExtratoVisivel(true);
+        } catch (error) {
+            console.error(error);
+            Alert.alert('Erro', 'Não foi possível carregar o extrato.');
+        }
+    };
+
     const lotesFiltrados = useMemo(() => {
         if (filtroAtivo === 'Todos') return lotes;
         if (filtroAtivo === 'Bagaço') {
@@ -101,10 +128,9 @@ export default function DepositoScreen() {
         return lotes.filter(l => l.destino === filtroAtivo);
     }, [lotes, filtroAtivo]);
 
-    // Função para alternar o filtro ao clicar no card
     const toggleFiltro = (filtro: 'Depósito 1' | 'Depósito 2' | 'Bagaço') => {
         if (filtroAtivo === filtro) {
-            setFiltroAtivo('Todos'); // Se clicar no que já está ativo, volta a mostrar todos
+            setFiltroAtivo('Todos');
         } else {
             setFiltroAtivo(filtro);
         }
@@ -123,12 +149,10 @@ export default function DepositoScreen() {
             const itensParaSincronizar: MaterialEntry[] = [];
             const timestamp = Date.now();
 
-            // Pega os lotes de bagaço do estoque geral
             const lotesBagacoGeral = todosMateriais.filter(m => 
                 m.tipoMaterial.includes('Bagaço') && !m.usado && m.destino !== 'Depósito 1' && m.destino !== 'Depósito 2'
             );
 
-            // Marca como usados
             todosMateriais = todosMateriais.map(m => {
                 if (lotesBagacoGeral.some(l => l.id === m.id)) {
                     const atualizado = { ...m, usado: true, sincronizado: false };
@@ -138,7 +162,6 @@ export default function DepositoScreen() {
                 return m;
             });
 
-            // Cria o novo lote no depósito
             const loteDeposito: MaterialEntry = {
                 id: timestamp.toString(),
                 data: new Date().toLocaleDateString('pt-BR'),
@@ -153,7 +176,6 @@ export default function DepositoScreen() {
             todosMateriais.push(loteDeposito);
             itensParaSincronizar.push(loteDeposito);
 
-            // Calcula o saldo restante e devolve pro estoque geral
             const saldoRestante = estoqueBagaco - pesoTransf;
             if (saldoRestante > 0) {
                 const loteRestante: MaterialEntry = {
@@ -172,6 +194,23 @@ export default function DepositoScreen() {
             }
 
             await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(todosMateriais));
+
+            // 📝 
+            // SENSOR 6: TRANSFERÊNCIA DE BAGAÇO PARA DEPÓSITO
+            // 
+            const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+            const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+            extrato.push({
+                id: Date.now().toString(),
+                data: new Date().toLocaleDateString('pt-BR'),
+                hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                tipo: 'SAIDA',
+                quantidade: pesoTransf,
+                motivo: `Transferência para ${destinoTransferencia}`
+            });
+            await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+            // 
+
             for (const item of itensParaSincronizar) await syncService.adicionarFila('material', item);
 
             setPesoTransferencia('');
@@ -195,6 +234,7 @@ export default function DepositoScreen() {
                 {/* HEADER */}
                 <View style={styles.header}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                        <MaterialCommunityIcons name="arrow-left" size={24} color={PALETTE.cinzaEscuro} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Gestão de Depósitos</Text>
                     <View style={styles.backButton} />
@@ -211,9 +251,8 @@ export default function DepositoScreen() {
                     </View>
                 </View>
 
-                {/* CARDS DOS DEPÓSITOS DE MISTURA (AGORA SÃO CLICÁVEIS) */}
+                {/* CARDS DOS DEPÓSITOS */}
                 <View style={styles.depositsRow}>
-                    {/* Depósito 1 */}
                     <TouchableOpacity 
                         style={[
                             styles.depositCard, 
@@ -231,7 +270,6 @@ export default function DepositoScreen() {
                         <Text style={styles.depositSubtitle}>Material Armazenado</Text>
                     </TouchableOpacity>
 
-                    {/* Depósito 2 */}
                     <TouchableOpacity 
                         style={[
                             styles.depositCard, 
@@ -250,25 +288,36 @@ export default function DepositoScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* CARD DO DEPÓSITO DE BAGAÇO (AGORA É CLICÁVEL) */}
-                <TouchableOpacity 
-                    style={[
-                        styles.depositCard, 
-                        { borderTopColor: '#F57C00', borderTopWidth: 4, marginTop: 12 },
-                        filtroAtivo === 'Bagaço' && { backgroundColor: '#FFF3E0', borderColor: '#F57C00', borderWidth: 1 }
-                    ]}
-                    onPress={() => toggleFiltro('Bagaço')}
-                    activeOpacity={0.7}
-                >
-                    <View style={styles.depositHeader}>
-                        <MaterialCommunityIcons name="sprout" size={24} color="#F57C00" />
-                        <Text style={styles.depositTitle}>Estoque de Bagaço</Text>
-                    </View>
-                    <Text style={styles.depositValue}>{estoqueBagaco.toFixed(2)} t</Text>
-                    <Text style={styles.depositSubtitle}>Matéria-prima disponível</Text>
-                </TouchableOpacity>
+                {/* CARD DO DEPÓSITO DE BAGAÇO */}
+                <View style={{ marginTop: 12 }}>
+                    <TouchableOpacity 
+                        style={[
+                            styles.depositCard, 
+                            { borderTopColor: '#F57C00', borderTopWidth: 4 },
+                            filtroAtivo === 'Bagaço' && { backgroundColor: '#FFF3E0', borderColor: '#F57C00', borderWidth: 1 }
+                        ]}
+                        onPress={() => toggleFiltro('Bagaço')}
+                        activeOpacity={0.7}
+                    >
+                        <View style={styles.depositHeader}>
+                            <MaterialCommunityIcons name="sprout" size={24} color="#F57C00" />
+                            <Text style={styles.depositTitle}>Estoque de Bagaço</Text>
+                        </View>
+                        <Text style={styles.depositValue}>{estoqueBagaco.toFixed(2)} t</Text>
+                        <Text style={styles.depositSubtitle}>Matéria-prima disponível</Text>
+                    </TouchableOpacity>
 
-                {/* 🔥 ÁREA DE TRANSFERÊNCIA DE BAGAÇO */}
+                    {/* 🔥 BOTÃO DO EXTRATO */}
+                    <TouchableOpacity 
+                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8, padding: 12, backgroundColor: '#FFF8E1', borderRadius: 8, borderWidth: 1, borderColor: '#FFCA28' }}
+                        onPress={abrirExtrato}
+                    >
+                        <MaterialCommunityIcons name="text-box-search-outline" size={20} color="#F57C00" style={{ marginRight: 8 }} />
+                        <Text style={{ color: '#F57C00', fontSize: 14, fontWeight: 'bold' }}>Ver Extrato do Bagaço</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* ÁREA DE TRANSFERÊNCIA DE BAGAÇO */}
                 {estoqueBagaco > 0 && (
                     <View style={[styles.summaryCard, { backgroundColor: PALETTE.branco, flexDirection: 'column', alignItems: 'stretch', padding: 16, marginTop: 16, borderColor: '#F57C00', borderWidth: 1 }]}>
                         <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#F57C00', marginBottom: 12 }}>
@@ -330,7 +379,6 @@ export default function DepositoScreen() {
                             {filtroAtivo === 'Todos' ? 'Histórico Geral' : `Lotes: ${filtroAtivo}`} ({lotesFiltrados.length})
                         </Text>
                         
-                        {/* Botão para limpar o filtro se houver algum ativo */}
                         {filtroAtivo !== 'Todos' && (
                             <TouchableOpacity onPress={() => setFiltroAtivo('Todos')} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEEEEE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
                                 <Text style={{ color: PALETTE.cinzaEscuro, fontSize: 12, fontWeight: 'bold', marginRight: 4 }}>Ver todos</Text>
@@ -356,15 +404,6 @@ export default function DepositoScreen() {
                                         <Text style={{ fontWeight: 'bold', fontSize: 16, color: PALETTE.cinzaEscuro }}>{title}</Text>
                                         <Text style={{ color: PALETTE.cinza, fontSize: 12, marginTop: 2 }}>Entrada: {item.data}</Text>
                                         <Text style={{ color: PALETTE.cinza, fontSize: 12 }}>Origem: {item.origem}</Text>
-                                        
-                                        {!isBagaco && item.mtrsOriginais && item.mtrsOriginais.length > 0 && (
-                                            <View style={{ marginTop: 6, backgroundColor: '#F5F5F5', padding: 6, borderRadius: 4 }}>
-                                                <Text style={{ color: PALETTE.cinzaEscuro, fontSize: 10, fontWeight: 'bold' }}>MTRs RASTREADOS:</Text>
-                                                <Text style={{ color: PALETTE.cinza, fontSize: 11 }}>
-                                                    {item.mtrsOriginais.join(', ')}
-                                                </Text>
-                                            </View>
-                                        )}
                                     </View>
                                     <View style={{ alignItems: 'flex-end', justifyContent: 'center', marginLeft: 8 }}>
                                         <Text style={{ fontWeight: 'bold', fontSize: 18, color: PALETTE.verdePrimario }}>{item.peso} t</Text>
@@ -386,6 +425,52 @@ export default function DepositoScreen() {
                 </View>
 
             </ScrollView>
+
+            {/* 🔥 MODAL DO EXTRATO DE BAGAÇO */}
+            <Modal visible={modalExtratoVisivel} animationType="slide" transparent={true}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <View>
+                                <Text style={styles.modalTitle}>Extrato de Bagaço</Text>
+                                <Text style={{ color: PALETTE.cinza, fontSize: 12 }}>Histórico de Entradas e Saídas</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setModalExtratoVisivel(false)} style={{ padding: 4 }}>
+                                <MaterialCommunityIcons name="close-circle" size={28} color={PALETTE.cinza} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView showsVerticalScrollIndicator={false}>
+                            {extratoList.length === 0 ? (
+                                <View style={{ alignItems: 'center', padding: 40 }}>
+                                    <MaterialCommunityIcons name="text-box-remove-outline" size={48} color={PALETTE.cinzaClaro} />
+                                    <Text style={{ color: PALETTE.cinza, marginTop: 12 }}>Nenhuma movimentação registrada.</Text>
+                                </View>
+                            ) : (
+                                extratoList.map(item => (
+                                    <View key={item.id} style={styles.extratoItem}>
+                                        <View style={[styles.extratoIcon, { backgroundColor: item.tipo === 'ENTRADA' ? '#E8F5E9' : '#FFEBEE' }]}>
+                                            <MaterialCommunityIcons 
+                                                name={item.tipo === 'ENTRADA' ? 'arrow-down-bold' : 'arrow-up-bold'} 
+                                                size={20} 
+                                                color={item.tipo === 'ENTRADA' ? PALETTE.verdePrimario : PALETTE.terracota} 
+                                            />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: PALETTE.cinzaEscuro }}>{item.motivo}</Text>
+                                            <Text style={{ fontSize: 12, color: PALETTE.cinza }}>{item.data} às {item.hora}</Text>
+                                        </View>
+                                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: item.tipo === 'ENTRADA' ? PALETTE.verdePrimario : PALETTE.terracota }}>
+                                            {item.tipo === 'ENTRADA' ? '+' : '-'} {item.quantidade.toFixed(2)}t
+                                        </Text>
+                                    </View>
+                                ))
+                            )}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
         </SafeAreaView>
     );
 }
@@ -425,5 +510,13 @@ const styles = StyleSheet.create({
     badgeText: { color: PALETTE.verdePrimario, fontSize: 10, fontWeight: 'bold' },
     
     emptyState: { alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: PALETTE.branco, borderRadius: 12, borderWidth: 1, borderColor: PALETTE.cinzaClaro },
-    emptyText: { color: PALETTE.cinza, fontSize: 14, textAlign: 'center', marginTop: 12 }
+    emptyText: { color: PALETTE.cinza, fontSize: 14, textAlign: 'center', marginTop: 12 },
+
+    // Estilos do Modal de Extrato
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    modalContent: { backgroundColor: PALETTE.branco, borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '80%', padding: 20 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro },
+    modalTitle: { fontSize: 20, fontWeight: 'bold', color: PALETTE.cinzaEscuro },
+    extratoItem: { flexDirection: 'row', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F0F0F0', alignItems: 'center' },
+    extratoIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 16 }
 });

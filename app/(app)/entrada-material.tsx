@@ -115,7 +115,7 @@ export default function EntradaMaterialScreen() {
         }, [])
     );
 
-    const loadData = async () => {
+        const loadData = async () => {
         try {
             setLoading(true);
 
@@ -123,20 +123,20 @@ export default function EntradaMaterialScreen() {
             if (registrosExistentes) {
                 const materiais = JSON.parse(registrosExistentes);
 
-                // 🔥 FILTRO MÁGICO: Traz TODOS que AINDA NÃO FORAM USADOS
-               // Ele puxa tudo que não foi usado, MAS IGNORA as misturas prontas
-                const materiaisParaMostrar = materiais.filter((m: any) => !m.usado && m.tipoMaterial !== 'Mistura Preparada');      
+                // 🔥 NOVO FILTRO: Traz TODOS os materiais (usados e não usados)
+                // MAS continua ignorando as "Misturas Preparadas" para não poluir a tela de entrada
+                const materiaisParaMostrar = materiais.filter((m: any) => m.tipoMaterial !== 'Mistura Preparada');      
 
                 // Ordena do mais recente para o mais antigo
                 const materiaisOrdenados = materiaisParaMostrar.sort((a: any, b: any) => Number(b.id) - Number(a.id));
 
-                // Atualiza a tela com os materiais pendentes
+                // Atualiza a tela com todos os materiais
                 setEntries(materiaisOrdenados);
             } else {
                 setEntries([]);
             }
 
-            // 🔥 MUDANÇA AQUI: Carregar destinos garantindo que as novas opções padrão existam
+            // Carregar destinos garantindo que as novas opções padrão existam
             const destinosSalvos = await AsyncStorage.getItem('listaDestinos');
             if (destinosSalvos) {
                 const saved = JSON.parse(destinosSalvos);
@@ -172,7 +172,7 @@ export default function EntradaMaterialScreen() {
         if (formatted.length <= 4) return formatted.slice(0, 2) + '/' + formatted.slice(2);
         return formatted.slice(0, 2) + '/' + formatted.slice(2, 4) + '/' + formatted.slice(4, 8);
     };
-        // ===== 🔥 LÓGICA DE FILTRAGEM POR DATA =====
+       
         // ===== 🔥 LÓGICA DE FILTRAGEM POR DATA E MTR =====
     const entradasFiltradas = useMemo(() => {
         const hoje = new Date();
@@ -335,6 +335,25 @@ export default function EntradaMaterialScreen() {
 
             // Salva o banco completo (sem perder os usados e as misturas)
             await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(todosMateriais));
+            
+            // 📝 ==========================================
+            // SENSOR 3: ENTRADA DE MATERIAL NOVO (BAGAÇO)
+            // ==========================================
+            if (!editingId && formData.tipoMaterial.includes('Bagaço')) {
+                const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+                const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+                extrato.push({
+                    id: Date.now().toString(),
+                    data: new Date().toLocaleDateString('pt-BR'),
+                    hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                    tipo: 'ENTRADA',
+                    quantidade: pesoNumerico,
+                    motivo: `Entrada de Material - Origem: ${formData.origem}`
+                });
+                await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+            }
+            // ==========================================
+
             await syncService.adicionarFila('material', newEntry);
 
             // Atualiza apenas a lista visual da tela (entries)
@@ -367,8 +386,8 @@ export default function EntradaMaterialScreen() {
         setShowForm(true);
     };
 
+    
     // ===== LÓGICA DE EXCLUSÃO DE MATERIAL =====
-        // ===== LÓGICA DE EXCLUSÃO DE MATERIAL =====
     const handleDelete = (id: string) => {
         Alert.alert(
             'Excluir Material',
@@ -379,19 +398,34 @@ export default function EntradaMaterialScreen() {
                     text: 'Apenas Local',
                     onPress: async () => {
                         try {
-                            // 1. Busca os registros atuais
                             const registrosExistentes = await AsyncStorage.getItem('materiaisRegistrados');
                             if (registrosExistentes) {
                                 const materiais = JSON.parse(registrosExistentes);
-
-                                // 2. Filtra removendo o item selecionado
+                                
+                                // 🔥 Captura o item antes de deletar para o Sensor
+                                const itemDeletado = materiais.find((m: any) => m.id === id);
+                                
                                 const novosMateriais = materiais.filter((m: any) => m.id !== id);
-
-                                // 3. Salva no AsyncStorage
                                 await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novosMateriais));
-
-                                // 4. Atualiza o estado da tela
                                 setEntries(novosMateriais);
+
+                                // 📝 ==========================================
+                                // SENSOR: ESTORNO DE ENTRADA (SAÍDA DE CORREÇÃO)
+                                // ==========================================
+                                if (itemDeletado && itemDeletado.tipoMaterial.includes('Bagaço')) {
+                                    const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+                                    const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+                                    extrato.push({
+                                        id: Date.now().toString(),
+                                        data: new Date().toLocaleDateString('pt-BR'),
+                                        hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                                        tipo: 'SAIDA',
+                                        quantidade: parseFloat(itemDeletado.peso.replace(',', '.')),
+                                        motivo: 'Exclusão de Registro de Entrada (Correção)'
+                                    });
+                                    await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+                                }
+                                // ==========================================
 
                                 Alert.alert('Sucesso', 'Material excluído apenas deste aparelho.');
                             }
@@ -405,22 +439,35 @@ export default function EntradaMaterialScreen() {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            // 1. Busca os registros atuais
                             const registrosExistentes = await AsyncStorage.getItem('materiaisRegistrados');
                             if (registrosExistentes) {
                                 const materiais = JSON.parse(registrosExistentes);
-
-                                // 2. Filtra removendo o item selecionado
+                                
+                                // 🔥 Captura o item antes de deletar para o Sensor
+                                const itemDeletado = materiais.find((m: any) => m.id === id);
+                                
                                 const novosMateriais = materiais.filter((m: any) => m.id !== id);
-
-                                // 3. Salva no AsyncStorage
                                 await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novosMateriais));
-
-                                // 4. Atualiza o estado da tela
                                 setEntries(novosMateriais);
 
-                                // 🔥 5. MUDANÇA AQUI: Adicionamos deletado: true para o backend reconhecer!
-                                // Usamos 'material' para cair na mesma rota do sync-materiais.ts
+                                // 📝 ==========================================
+                                // SENSOR: ESTORNO DE ENTRADA (SAÍDA DE CORREÇÃO)
+                                // ==========================================
+                                if (itemDeletado && itemDeletado.tipoMaterial.includes('Bagaço')) {
+                                    const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+                                    const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+                                    extrato.push({
+                                        id: Date.now().toString(),
+                                        data: new Date().toLocaleDateString('pt-BR'),
+                                        hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                                        tipo: 'SAIDA',
+                                        quantidade: parseFloat(itemDeletado.peso.replace(',', '.')),
+                                        motivo: 'Exclusão de Registro de Entrada (Correção)'
+                                    });
+                                    await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+                                }
+                                // ==========================================
+
                                 await syncService.adicionarFila('material' as any, { 
                                     id: id,
                                     deletado: true 
@@ -674,7 +721,7 @@ export default function EntradaMaterialScreen() {
                 )}
 
                 {/* 🔥 LISTAGEM ATUALIZADA COM FILTROS */}
-                                {/* 🔥 LISTAGEM ATUALIZADA COM FILTROS E BUSCA */}
+                {/* 🔥 LISTAGEM ATUALIZADA COM FILTROS E BUSCA */}
                 <View style={styles.listSection}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                         <Text style={[styles.listTitle, { marginBottom: 0 }]}>Últimos Registros</Text>
@@ -721,12 +768,7 @@ export default function EntradaMaterialScreen() {
                         >
                             <Text style={[styles.filterChipText, filtroPeriodo === 'mes' && styles.filterChipTextActive]}>30 Dias</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.filterChip, filtroPeriodo === 'todos' && styles.filterChipActive]} 
-                            onPress={() => setFiltroPeriodo('todos')}
-                        >
-                            <Text style={[styles.filterChipText, filtroPeriodo === 'todos' && styles.filterChipTextActive]}>Todos</Text>
-                        </TouchableOpacity>
+                        
                     </ScrollView>
 
                     {/* LISTA RENDERIZADA */}

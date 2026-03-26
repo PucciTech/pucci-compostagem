@@ -16,7 +16,10 @@ interface MaterialEntry {
     destino: string;
     sincronizado: boolean;
     usado?: boolean;
+    deletado?: boolean;
     mtrsOriginais?: string[];
+    itensOriginaisIds?: string[]; // 🔥 NOVO: Guarda os IDs dos caminhões usados
+    pesoBagacoUtilizado?: number; // 🔥 NOVO: Guarda quanto bagaço foi usado na mistura
 }
 
 export default function PrepararMisturaScreen() {
@@ -28,7 +31,10 @@ export default function PrepararMisturaScreen() {
     const [selecionados, setSelecionados] = useState<string[]>([]);
     const [pesoBagaco, setPesoBagaco] = useState('');
     
-    // 🔥 ESTADOS DO ESTOQUE (MONTANTE)
+    // 🔥 NOVO: Estado do Histórico
+    const [historicoMisturas, setHistoricoMisturas] = useState<MaterialEntry[]>([]);
+    
+    // Estados DO ESTOQUE (MONTANTE)
     const [estoquePatio, setEstoquePatio] = useState(0);
     const [estoqueDep1, setEstoqueDep1] = useState(0);
     const [estoqueDep2, setEstoqueDep2] = useState(0);
@@ -57,7 +63,8 @@ export default function PrepararMisturaScreen() {
                 const disponiveis = materiais.filter(m => 
                     m.tipoMaterial === 'Biossólido' && 
                     m.destino === 'Pátio de Mistura' && 
-                    !m.usado
+                    !m.usado && 
+                    !m.deletado
                 );
                 setMateriaisPatio(disponiveis.sort((a, b) => Number(a.id) - Number(b.id)));
 
@@ -68,18 +75,17 @@ export default function PrepararMisturaScreen() {
                 let bagaco = 0;
 
                 materiais.forEach(m => {
-                    if (!m.usado) {
+                    if (!m.usado && !m.deletado) {
                         const pesoStr = m.peso ? m.peso.toString().replace(',', '.') : '0';
                         const peso = parseFloat(pesoStr) || 0;
                         const destinoItem = m.destino ? m.destino.trim() : '';
 
-                        // 🔥 CORREÇÃO: Apenas "Mistura Preparada" entra no painel azul do topo!
                         if (m.tipoMaterial === 'Mistura Preparada') {
                             if (destinoItem === 'Pátio de Mistura') patio += peso;
                             else if (destinoItem === 'Depósito 1') dep1 += peso;
                             else if (destinoItem === 'Depósito 2') dep2 += peso;
                         } else if (m.tipoMaterial && m.tipoMaterial.includes('Bagaço')) {
-                            bagaco += peso; // Soma todo o bagaço disponível
+                            bagaco += peso;
                         }
                     }
                 });
@@ -89,13 +95,17 @@ export default function PrepararMisturaScreen() {
                 setEstoqueDep2(dep2);
                 setEstoqueBagaco(bagaco);
 
-                // 🔥 CORREÇÃO: Captura apenas MTRs de Misturas Preparadas no Pátio
+                // 3. Captura MTRs
                 const lotesNoPatio = materiais.filter(m => {
                     const destinoItem = m.destino ? m.destino.trim() : '';
-                    return m.tipoMaterial === 'Mistura Preparada' && destinoItem === 'Pátio de Mistura' && !m.usado;
+                    return m.tipoMaterial === 'Mistura Preparada' && destinoItem === 'Pátio de Mistura' && !m.usado && !m.deletado;
                 });
                 const todosMtrs = lotesNoPatio.flatMap(l => l.mtrsOriginais || []);
                 setMtrsNoPatio([...new Set(todosMtrs)]);
+
+                // 🔥 4. Carrega o Histórico de Misturas
+                const misturas = materiais.filter(m => m.tipoMaterial === 'Mistura Preparada' && m.origem === 'Processo Interno' && !m.deletado);
+                setHistoricoMisturas(misturas.sort((a, b) => Number(b.id) - Number(a.id)).slice(0, 15)); // Pega as últimas 15
             }
         } catch (error) {
             console.error(error);
@@ -126,9 +136,7 @@ export default function PrepararMisturaScreen() {
     }, [selecionados, materiaisPatio, pesoBagaco]);
 
     // ===== 1. SALVAR NOVA MISTURA NO PÁTIO =====
-        // ===== 1. SALVAR NOVA MISTURA NO PÁTIO =====
-    const handleSalvarMistura = async () => {
-        // Valida se tem pelo menos uma das duas coisas
+        const handleSalvarMistura = async () => {
         if (selecionados.length === 0 && (!pesoBagaco.trim() || resumoCalculo.pesoBagaco <= 0)) {
             return Alert.alert('Atenção', 'Selecione ao menos um caminhão ou informe o peso do bagaço.');
         }
@@ -148,7 +156,7 @@ export default function PrepararMisturaScreen() {
                 .map(m => m.numeroMTR)
                 .filter(mtr => mtr && mtr !== 'N/A');
 
-            const bagacoDisponivel = todosMateriais.filter(m => m.tipoMaterial.includes('Bagaço') && !m.usado);
+            const bagacoDisponivel = todosMateriais.filter(m => m.tipoMaterial.includes('Bagaço') && !m.usado && !m.deletado);
 
             todosMateriais = todosMateriais.map(m => {
                 if (selecionados.includes(m.id)) {
@@ -156,7 +164,6 @@ export default function PrepararMisturaScreen() {
                     itensParaSincronizar.push(atualizado);
                     return atualizado;
                 }
-                // 🔥 Só dá baixa no estoque de bagaço se realmente informou bagaço
                 if (resumoCalculo.pesoBagaco > 0 && bagacoDisponivel.some(b => b.id === m.id)) {
                     const atualizado = { ...m, usado: true, sincronizado: false };
                     itensParaSincronizar.push(atualizado);
@@ -177,13 +184,14 @@ export default function PrepararMisturaScreen() {
                 destino: 'Pátio de Mistura', 
                 sincronizado: false,
                 usado: false,
-                mtrsOriginais: mtrsDosCaminhoes
+                mtrsOriginais: mtrsDosCaminhoes,
+                itensOriginaisIds: selecionados, 
+                pesoBagacoUtilizado: resumoCalculo.pesoBagaco 
             };
 
             todosMateriais.push(novaMistura);
             itensParaSincronizar.push(novaMistura);
 
-            // 🔥 Só recria o saldo remanescente de bagaço se usou bagaço
             if (resumoCalculo.pesoBagaco > 0) {
                 const saldoRestanteBagaco = estoqueBagaco - resumoCalculo.pesoBagaco;
                 if (saldoRestanteBagaco > 0) {
@@ -204,13 +212,28 @@ export default function PrepararMisturaScreen() {
             }
 
             await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(todosMateriais));
+
+            // 🔥 SENSOR 1: SAÍDA DE BAGAÇO PARA MISTURA
+            if (resumoCalculo.pesoBagaco > 0) {
+                const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+                const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+                extrato.push({
+                    id: Date.now().toString(),
+                    data: new Date().toLocaleDateString('pt-BR'),
+                    hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                    tipo: 'SAIDA',
+                    quantidade: resumoCalculo.pesoBagaco,
+                    motivo: 'Preparação de Mistura no Pátio'
+                });
+                await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+            }
+
             for (const item of itensParaSincronizar) await syncService.adicionarFila('material', item);
 
             setSelecionados([]);
             setPesoBagaco('');
             await loadData();
             
-            // Mensagem de sucesso dinâmica
             let msgSucesso = `${resumoCalculo.pesoTotal.toFixed(2)}t adicionadas ao Pátio.`;
             if (resumoCalculo.pesoBagaco > 0) msgSucesso += `\n\nBagaço: ${resumoCalculo.pesoBagaco.toFixed(2)}t`;
             if (selecionados.length > 0) msgSucesso += `\nBiossólido: ${resumoCalculo.pesoBiossolido.toFixed(2)}t`;
@@ -223,8 +246,115 @@ export default function PrepararMisturaScreen() {
         }
     };
 
-    // ===== 2. TRANSFERIR DO PÁTIO PARA O DEPÓSITO =====
-        // ===== 2. TRANSFERIR DO PÁTIO PARA O DEPÓSITO =====
+    // 🔥 2. NOVA FUNÇÃO: ESTORNAR MISTURA
+        const handleExcluirMistura = (mistura: MaterialEntry) => {
+        if (mistura.usado) {
+            return Alert.alert('Atenção', 'Esta mistura já foi transferida para um depósito e não pode mais ser estornada.');
+        }
+
+        Alert.alert(
+            'Confirmar Estorno ⚠️',
+            `Deseja realmente desfazer esta mistura de ${mistura.peso}t?\n\nOs materiais originais (Biossólido e Bagaço) voltarão para o estoque.`,
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                { 
+                    text: 'Sim, Estornar', 
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setLoading(true);
+                            const registros = await AsyncStorage.getItem('materiaisRegistrados');
+                            let todosMateriais: MaterialEntry[] = registros ? JSON.parse(registros) : [];
+                            const itensParaSincronizar: MaterialEntry[] = [];
+
+                            // 1. Marca a mistura como deletada
+                            const misturaDeletada = { ...mistura, deletado: true, sincronizado: false };
+                            itensParaSincronizar.push(misturaDeletada);
+                            todosMateriais = todosMateriais.map(m => m.id === mistura.id ? misturaDeletada : m);
+
+                            // 2. Restaura os Biossólidos originais
+                            if (mistura.itensOriginaisIds && mistura.itensOriginaisIds.length > 0) {
+                                todosMateriais = todosMateriais.map(m => {
+                                    if (mistura.itensOriginaisIds!.includes(m.id)) {
+                                        const restaurado = { ...m, usado: false, sincronizado: false };
+                                        itensParaSincronizar.push(restaurado);
+                                        return restaurado;
+                                    }
+                                    return m;
+                                });
+                            } else {
+                                const pesoBioDevolver = parseFloat(mistura.peso) - (mistura.pesoBagacoUtilizado || 0);
+                                if (pesoBioDevolver > 0) {
+                                    const timestamp = Date.now();
+                                    const devolucaoBio: MaterialEntry = {
+                                        id: timestamp.toString(),
+                                        data: new Date().toLocaleDateString('pt-BR'),
+                                        tipoMaterial: 'Biossólido',
+                                        numeroMTR: mistura.mtrsOriginais ? mistura.mtrsOriginais.join(', ') : 'ESTORNO',
+                                        peso: pesoBioDevolver.toFixed(2),
+                                        origem: 'Estorno de Mistura',
+                                        destino: 'Pátio de Mistura',
+                                        sincronizado: false,
+                                        usado: false
+                                    };
+                                    todosMateriais.push(devolucaoBio);
+                                    itensParaSincronizar.push(devolucaoBio);
+                                }
+                            }
+
+                            // 3. Devolve o Bagaço para o estoque
+                            const pesoBagacoDevolver = mistura.pesoBagacoUtilizado || 0;
+                            if (pesoBagacoDevolver > 0) {
+                                const timestamp = Date.now() + 1;
+                                const devolucaoBagaco: MaterialEntry = {
+                                    id: timestamp.toString(),
+                                    data: new Date().toLocaleDateString('pt-BR'),
+                                    tipoMaterial: 'Bagaço de Cana',
+                                    numeroMTR: 'ESTORNO',
+                                    peso: pesoBagacoDevolver.toFixed(2),
+                                    origem: 'Estorno de Mistura',
+                                    destino: 'Estoque Bagaço',
+                                    sincronizado: false,
+                                    usado: false
+                                };
+                                todosMateriais.push(devolucaoBagaco);
+                                itensParaSincronizar.push(devolucaoBagaco);
+                            }
+
+                            await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(todosMateriais));
+                            
+                            // 🔥 SENSOR 2: ESTORNO DE MISTURA (ENTRADA DE BAGAÇO)
+                            if (pesoBagacoDevolver > 0) {
+                                const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+                                const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+                                extrato.push({
+                                    id: Date.now().toString(),
+                                    data: new Date().toLocaleDateString('pt-BR'),
+                                    hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                                    tipo: 'ENTRADA',
+                                    quantidade: pesoBagacoDevolver,
+                                    motivo: 'Estorno de Mistura Cancelada'
+                                });
+                                await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+                            }
+
+                            for (const item of itensParaSincronizar) {
+                                await syncService.adicionarFila('material', item);
+                            }
+
+                            await loadData();
+                            Alert.alert('Sucesso', 'Mistura estornada e materiais devolvidos ao estoque.');
+                        } catch (error) {
+                            console.error(error);
+                            Alert.alert('Erro', 'Falha ao estornar a mistura.');
+                            setLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+    // ===== 3. TRANSFERIR DO PÁTIO PARA O DEPÓSITO =====
     const handleTransferir = async () => {
         const pesoTransf = parseFloat(pesoTransferencia.replace(',', '.'));
         if (isNaN(pesoTransf) || pesoTransf <= 0) return Alert.alert('Atenção', 'Informe um peso válido para transferir.');
@@ -236,10 +366,9 @@ export default function PrepararMisturaScreen() {
             let todosMateriais: MaterialEntry[] = registros ? JSON.parse(registros) : [];
             const itensParaSincronizar: MaterialEntry[] = [];
 
-            // 🔥 CORREÇÃO: Acha TODOS os materiais que são MISTURA PREPARADA e estão no Pátio
             const lotesPatio = todosMateriais.filter(m => {
                 const destinoItem = m.destino ? m.destino.trim() : '';
-                return m.tipoMaterial === 'Mistura Preparada' && destinoItem === 'Pátio de Mistura' && !m.usado;
+                return m.tipoMaterial === 'Mistura Preparada' && destinoItem === 'Pátio de Mistura' && !m.usado && !m.deletado;
             });
             
             const todosMtrsDoPatio = lotesPatio.flatMap(l => l.mtrsOriginais || []);
@@ -304,11 +433,8 @@ export default function PrepararMisturaScreen() {
 
     if (loading) return <ActivityIndicator style={{ flex: 1 }} color={PALETTE.verdePrimario} />;
 
-    // 🔥 TEXTO DINÂMICO DO BOTÃO
-        // 🔥 NOVA VALIDAÇÃO: Permite salvar se tiver selecionado caminhões OU se tiver digitado bagaço
     const isSaveDisabled = (selecionados.length === 0 && resumoCalculo.pesoBagaco <= 0) || resumoCalculo.pesoBagaco > estoqueBagaco;
 
-    // 🔥 TEXTO DINÂMICO DO BOTÃO
     let textoBotaoSalvar = "Adicionar ao Pátio";
     if (selecionados.length > 0 && resumoCalculo.pesoBagaco > 0) {
         textoBotaoSalvar = "Misturar e Adicionar";
@@ -322,9 +448,9 @@ export default function PrepararMisturaScreen() {
         <SafeAreaView style={styles.container}>
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 
-                {/* HEADER */}
                 <View style={styles.header}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                        <MaterialCommunityIcons name="arrow-left" size={24} color={PALETTE.cinzaEscuro} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Mistura e Estoque</Text>
                     <View style={styles.backButton} />
@@ -407,7 +533,6 @@ export default function PrepararMisturaScreen() {
                     </View>
                 )}
 
-                {/* DIVISOR VISUAL */}
                 <View style={{ height: 1, backgroundColor: PALETTE.cinzaClaro, marginVertical: 20 }} />
                 <Text style={{ fontSize: 18, fontWeight: 'bold', color: PALETTE.cinzaEscuro, marginBottom: 16 }}>
                     ➕ Preparar Nova Mistura
@@ -498,7 +623,6 @@ export default function PrepararMisturaScreen() {
                         <Text style={{ fontWeight: 'bold', fontSize: 18, color: PALETTE.verdePrimario }}>+ {resumoCalculo.pesoTotal.toFixed(2)} t</Text>
                     </View>
 
-                                        {/* BOTÃO DE SALVAR DINÂMICO */}
                     <TouchableOpacity 
                         style={[styles.btnSave, { marginTop: 20 }, isSaveDisabled && { opacity: 0.5 }]} 
                         onPress={handleSalvarMistura}
@@ -507,6 +631,51 @@ export default function PrepararMisturaScreen() {
                         <Text style={styles.btnSaveText}>{textoBotaoSalvar}</Text>
                     </TouchableOpacity>
                 </View>
+
+                {/* 🔥 3. NOVO: HISTÓRICO DE MISTURAS */}
+                <View style={{ height: 1, backgroundColor: PALETTE.cinzaClaro, marginVertical: 20 }} />
+                <Text style={{ fontSize: 18, fontWeight: 'bold', color: PALETTE.cinzaEscuro, marginBottom: 16 }}>
+                    🕒 Histórico de Misturas (Pátio)
+                </Text>
+
+                {historicoMisturas.length === 0 ? (
+                    <View style={[styles.emptyState, { padding: 20, backgroundColor: PALETTE.branco, borderRadius: 12 }]}>
+                        <MaterialCommunityIcons name="history" size={40} color={PALETTE.cinzaClaro} />
+                        <Text style={[styles.emptyText, { marginTop: 10 }]}>Nenhuma mistura registrada recentemente.</Text>
+                    </View>
+                ) : (
+                    historicoMisturas.map(mistura => {
+                        const bioUtilizado = parseFloat(mistura.peso) - (mistura.pesoBagacoUtilizado || 0);
+                        const bagUtilizado = mistura.pesoBagacoUtilizado || 0;
+                        
+                        return (
+                            <View key={mistura.id} style={[styles.formCard, { padding: 12, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={{ fontWeight: 'bold', color: PALETTE.cinzaEscuro, fontSize: 16 }}>
+                                        {mistura.data} - {mistura.peso}t
+                                    </Text>
+                                    <Text style={{ color: PALETTE.cinza, fontSize: 12, marginTop: 2 }}>
+                                        Biossólido: {bioUtilizado.toFixed(2)}t | Bagaço: {bagUtilizado.toFixed(2)}t
+                                    </Text>
+                                    {mistura.usado && (
+                                        <Text style={{ color: PALETTE.warning, fontSize: 11, marginTop: 4, fontWeight: 'bold' }}>
+                                            ⚠️ Já transferido (Não pode ser estornado)
+                                        </Text>
+                                    )}
+                                </View>
+                                
+                                {!mistura.usado && (
+                                    <TouchableOpacity 
+                                        style={{ padding: 10, backgroundColor: '#FFEBEE', borderRadius: 8 }}
+                                        onPress={() => handleExcluirMistura(mistura)}
+                                    >
+                                        <MaterialCommunityIcons name="delete-outline" size={24} color={PALETTE.terracota} />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        );
+                    })
+                )}
 
             </ScrollView>
         </SafeAreaView>
@@ -554,7 +723,6 @@ export const styles = StyleSheet.create({
     emptyState: { alignItems: 'center', justifyContent: 'center', padding: 20 },
     emptyText: { color: PALETTE.cinza, fontSize: 16, textAlign: 'center' },
     
-    // Novos estilos do Estoque
     stockRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     stockItem: { flex: 1, alignItems: 'center' },
     stockLabel: { color: '#E8EAF6', fontSize: 12, marginBottom: 4, textAlign: 'center' },

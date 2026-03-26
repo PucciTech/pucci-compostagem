@@ -181,7 +181,7 @@ export default function EnriquecerLeiraScreen() {
   };
 
     
-  const handleSalvar = async () => {
+    const handleSalvar = async () => {
     if (!leiraSelecionada) return Alert.alert('Erro', 'Selecione uma leira primeiro.');
     if (!formData.data.trim()) return Alert.alert('Erro', 'Digite a data.');
     if (!formData.pesoAdicionado.trim()) return Alert.alert('Erro', 'Digite o peso adicionado.');
@@ -221,7 +221,6 @@ export default function EnriquecerLeiraScreen() {
             let mat = materiais[i];
             if (mat.usado) continue;
 
-            // 🔥 NORMALIZADOR: Tira acentos, espaços e deixa minúsculo
             const destinoNorm = mat.destino ? String(mat.destino).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') : '';
             const tipoNorm = mat.tipoMaterial ? String(mat.tipoMaterial).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') : '';
 
@@ -294,6 +293,24 @@ export default function EnriquecerLeiraScreen() {
         leirasData[leiraIndex].enriquecimentos.push(novoEnriquecimento);
         await AsyncStorage.setItem('leirasFormadas', JSON.stringify(leirasData));
       }
+
+      // 📝 ==========================================
+      // SENSOR 4: SAÍDA PARA ENRIQUECIMENTO
+      // ==========================================
+      if (materialSelecionado.id === 'Bagaço') {
+          const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+          const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+          extrato.push({
+              id: Date.now().toString(),
+              data: new Date().toLocaleDateString('pt-BR'),
+              hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+              tipo: 'SAIDA',
+              quantidade: pesoAdicionado,
+              motivo: `Enriquecimento da Leira #${leiraSelecionada.numeroLeira}`
+          });
+          await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+      }
+      // ==========================================
 
       await syncService.adicionarFila('enriquecimento', novoEnriquecimento);
       const temInternet = await syncService.verificarInternet();

@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Network from 'expo-network';
 
+// 🔥 1. ADICIONADO 'extrato_bagaco' NA INTERFACE DA FILA
 interface SyncQueue {
-  tipo: 'material' | 'leira' | 'monitoramento' | 'clima' | 'enriquecimento' | 'leira_deletada' | 'clima_deletado';
+  tipo: 'material' | 'leira' | 'monitoramento' | 'clima' | 'enriquecimento' | 'leira_deletada' | 'clima_deletado' | 'extrato_bagaco';
   dados: any;
   timestamp: number;
   tentativas: number;
@@ -19,7 +20,7 @@ export const syncService = {
     }
   },
 
-  // 🔥 NOVA FUNÇÃO: RESTAURAR DADOS DO SERVIDOR (BACKUP)
+  // ===== RESTAURAR DADOS DO SERVIDOR (BACKUP) =====
   async restaurarDadosDoServidor(): Promise<boolean> {
     try {
       console.log('🔄 Iniciando restauração de dados do servidor...');
@@ -39,29 +40,27 @@ export const syncService = {
           const materiaisFormatados = result.dados.materiais.map((m: any) => ({
             id: m.id,
             data: m.data || '',
-            tipoMaterial: m.tipomaterial || 'Biossólido', // Proteção contra null
+            tipoMaterial: m.tipomaterial || 'Biossólido',
             numeroMTR: m.numeromtr || '',
             peso: String(m.peso || '0'),
-            origem: m.origem || 'Não informada', // Proteção contra null
+            origem: m.origem || 'Não informada',
             destino: m.destino || 'patio',
             usado: m.usado 
           }));
           await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(materiaisFormatados));
         }
 
-        // 2. LEIRAS + MTRs (BLINDADO)
+        // 2. LEIRAS + MTRs
         if (result.dados.leiras?.length > 0) {
           const leirasFormatadas = result.dados.leiras.map((l: any) => {
-            
             const mtrsDaLeira = (result.dados.leiraMtrs || []).filter((mtr: any) => mtr.leira_id === l.id);
-            
             const biossolidosFormatados = mtrsDaLeira.map((mtr: any) => ({
               id: mtr.id,
               data: mtr.criado_em ? new Date(mtr.criado_em).toLocaleDateString('pt-BR') : '',
               numeroMTR: mtr.numero_mtr || '',
               peso: String(mtr.peso || '0'),
-              origem: mtr.origem || 'Não informada', // Proteção contra null
-              tipoMaterial: mtr.tipo_material || 'Biossólido' // Proteção contra null
+              origem: mtr.origem || 'Não informada',
+              tipoMaterial: mtr.tipo_material || 'Biossólido'
             }));
 
             return {
@@ -71,7 +70,7 @@ export const syncService = {
               dataFormacao: l.dataformacao || '',
               biossólidos: biossolidosFormatados,
               bagaço: Number(l.bagaço) || 12,
-              status: l.status || 'formada', // 🔥 AQUI ESTAVA O MAIOR RISCO DE QUEBRAR A TELA
+              status: l.status || 'formada',
               totalBiossólido: Number(l.totalbiossólido) || 0
             };
           });
@@ -205,9 +204,33 @@ export const syncService = {
       const fila = await AsyncStorage.getItem('filaSync') || '[]';
       const filaArray: SyncQueue[] = JSON.parse(fila);
 
+      // 🔥 2. NOVA LÓGICA: Sincronizar o Extrato Local inteiro se houver internet
+      // (Não usamos a fila para o extrato, mandamos o arquivo local inteiro para garantir integridade)
+      try {
+        const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+        if (extratoSalvo) {
+            const extratoData = JSON.parse(extratoSalvo);
+            if (extratoData.length > 0) {
+                // Filtra apenas os que ainda não foram sincronizados
+                const extratoNaoSincronizado = extratoData.filter((e: any) => !e.sincronizado);
+                
+                if (extratoNaoSincronizado.length > 0) {
+                    console.log(`🔄 Sincronizando ${extratoNaoSincronizado.length} itens do Extrato de Bagaço...`);
+                    await this.sincronizarGenerico('sync-extrato-bagaco', { extrato: extratoNaoSincronizado }, operador);
+                    
+                    // Marca como sincronizado localmente
+                    const extratoAtualizado = extratoData.map((e: any) => ({ ...e, sincronizado: true }));
+                    await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extratoAtualizado));
+                }
+            }
+        }
+      } catch (err) {
+        console.error('❌ Erro ao sincronizar extrato de bagaço:', err);
+      }
+
       if (filaArray.length === 0) return true;
 
-      console.log(`🔄 Sincronizando ${filaArray.length} itens...`);
+      console.log(`🔄 Sincronizando ${filaArray.length} itens da Fila Principal...`);
 
       const grupos = {
         material: filaArray.filter(f => f.tipo === 'material').map(f => ({...f.dados, deletado: f.dados.deletado === true})),

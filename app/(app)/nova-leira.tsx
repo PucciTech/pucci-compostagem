@@ -292,7 +292,7 @@ export default function NovaLeiraScreen() {
     }
   };
   
-  const handleFormarLeira = async () => {
+    const handleFormarLeira = async () => {
     let novaLeira: Leira;
     const isGranel = ['Pátio de Mistura', 'Depósito 1', 'Depósito 2'].includes(piscinaoSelecionado);
     
@@ -442,6 +442,22 @@ export default function NovaLeiraScreen() {
              materiais.push(loteRestanteBagaco);
              await syncService.adicionarFila('material', loteRestanteBagaco);
            }
+
+           // 📝 ==========================================
+           // SENSOR 5: SAÍDA PARA FORMAÇÃO DE LEIRA
+           // ==========================================
+           const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+           const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+           extrato.push({
+               id: Date.now().toString(),
+               data: new Date().toLocaleDateString('pt-BR'),
+               hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+               tipo: 'SAIDA',
+               quantidade: bagacoUtilizado,
+               motivo: `Formação da Leira #${numeroFinal}`
+           });
+           await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+           // ==========================================
         }
 
         // 2. DESCONTA O PÁTIO/DEPÓSITO
@@ -536,12 +552,54 @@ export default function NovaLeiraScreen() {
       await AsyncStorage.setItem('leirasFormadas', JSON.stringify(novasLeiras));
       setLeiras(novasLeiras);
 
-      if (devolverAoEstoque && leira.tipoFormacao === 'MTR') {
+      if (devolverAoEstoque) {
         const materiaisRegistrados = await AsyncStorage.getItem('materiaisRegistrados');
         const materiais = materiaisRegistrados ? JSON.parse(materiaisRegistrados) : [];
-        const novosMateriais = [...materiais, ...leira.biossólidos];
+        
+        let novosMateriais = [...materiais];
+
+        // 1. Devolve os biossólidos (se for MTR)
+        if (leira.tipoFormacao === 'MTR' && leira.biossólidos) {
+            novosMateriais = [...novosMateriais, ...leira.biossólidos];
+        }
+
+        // 2. Devolve o Bagaço para o estoque geral
+        const pesoBagacoDevolver = leira.bagaço || 0;
+        if (pesoBagacoDevolver > 0) {
+            const timestamp = Date.now();
+            const devolucaoBagaco = {
+                id: `estorno-bagaco-${timestamp}`,
+                data: new Date().toLocaleDateString('pt-BR'),
+                tipoMaterial: 'Bagaço de Cana',
+                numeroMTR: 'ESTORNO',
+                peso: pesoBagacoDevolver.toString(),
+                origem: `Estorno Leira #${leira.numeroLeira}`,
+                destino: 'Estoque Bagaço',
+                sincronizado: false,
+                usado: false
+            };
+            novosMateriais.push(devolucaoBagaco);
+            await syncService.adicionarFila('material', devolucaoBagaco);
+
+            // 📝 ==========================================
+            // SENSOR FINAL: ESTORNO DE FORMAÇÃO (ENTRADA DE BAGAÇO)
+            // ==========================================
+            const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+            const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+            extrato.push({
+                id: timestamp.toString(),
+                data: new Date().toLocaleDateString('pt-BR'),
+                hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                tipo: 'ENTRADA',
+                quantidade: pesoBagacoDevolver,
+                motivo: `Exclusão/Estorno da Leira #${leira.numeroLeira}`
+            });
+            await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+            // ==========================================
+        }
+
         await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novosMateriais));
-        loadData();
+        if (typeof loadData === 'function') await loadData();
         Alert.alert('Sucesso', 'Leira excluída e materiais devolvidos ao estoque.');
       } else {
         Alert.alert('Sucesso', 'Leira e materiais excluídos definitivamente.');
@@ -553,7 +611,6 @@ export default function NovaLeiraScreen() {
       Alert.alert('Erro', 'Falha ao excluir leira.');
     }
   };
-
   
   const totalBioSelecionado = modoManual
     ? parsePeso(pesoManualBio)
