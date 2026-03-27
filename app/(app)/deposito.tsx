@@ -101,22 +101,54 @@ export default function DepositoScreen() {
         }
     };
 
-    // 🔥 FUNÇÃO PARA ABRIR O EXTRATO
+    
+    //🔥 FUNÇÃO PARA ABRIR O EXTRATO (BUSCANDO DIRETO DA NUVEM)
     const abrirExtrato = async () => {
         try {
-            const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
-            if (extratoSalvo) {
-                const extrato: ExtratoBagacoEntry[] = JSON.parse(extratoSalvo);
-                // Ordena do mais recente para o mais antigo
-                extrato.sort((a, b) => Number(b.id) - Number(a.id));
-                setExtratoList(extrato);
+            setLoading(true); // Mostra o loading enquanto busca na nuvem
+            
+            const netlifyUrl = process.env.EXPO_PUBLIC_NETLIFY_URL || 'http://localhost:9999';
+            
+            // Faz a requisição para a nuvem
+            const response = await fetch(`${netlifyUrl}/.netlify/functions/get-extrato-bagaco`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                
+                if (result.sucesso && result.dados) {
+                    // Ordena do mais recente para o mais antigo
+                    const extratoNuvem = result.dados.sort((a: any, b: any) => Number(b.id) - Number(a.id));
+                    
+                    // Formata os dados para a tela
+                    const extratoFormatado = extratoNuvem.map((item: any) => ({
+                        id: item.id,
+                        data: item.data,
+                        hora: item.hora,
+                        tipo: item.tipo,
+                        quantidade: Number(item.quantidade),
+                        motivo: item.motivo
+                    }));
+
+                    setExtratoList(extratoFormatado);
+                    
+                    // 🔥 Opcional: Atualiza o cache local com os dados limpos da nuvem
+                    await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extratoFormatado));
+                } else {
+                    setExtratoList([]);
+                }
             } else {
-                setExtratoList([]);
+                throw new Error('Falha na resposta do servidor');
             }
+
             setModalExtratoVisivel(true);
         } catch (error) {
-            console.error(error);
-            Alert.alert('Erro', 'Não foi possível carregar o extrato.');
+            console.error("Erro ao buscar extrato da nuvem:", error);
+            Alert.alert('Erro', 'Não foi possível buscar o extrato da nuvem. Verifique sua conexão.');
+        } finally {
+            setLoading(false);
         }
     };
 

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput as RNTextInput, Alert, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput as RNTextInput, Alert, ActivityIndicator, StyleSheet, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -40,6 +40,11 @@ export default function PrepararMisturaScreen() {
     const [estoqueDep2, setEstoqueDep2] = useState(0);
     const [estoqueBagaco, setEstoqueBagaco] = useState(0);
     const [mtrsNoPatio, setMtrsNoPatio] = useState<string[]>([]);
+
+        // 🔥 NOVO: Estados para Edição da Mistura
+    const [showModalEdit, setShowModalEdit] = useState(false);
+    const [misturaEditando, setMisturaEditando] = useState<MaterialEntry | null>(null);
+    const [novoPesoBagaco, setNovoPesoBagaco] = useState('');
 
     // Estados da Transferência
     const [pesoTransferencia, setPesoTransferencia] = useState('');
@@ -247,7 +252,7 @@ export default function PrepararMisturaScreen() {
     };
 
     // 🔥 2. NOVA FUNÇÃO: ESTORNAR MISTURA
-        const handleExcluirMistura = (mistura: MaterialEntry) => {
+    const handleExcluirMistura = (mistura: MaterialEntry) => {
         if (mistura.usado) {
             return Alert.alert('Atenção', 'Esta mistura já foi transferida para um depósito e não pode mais ser estornada.');
         }
@@ -434,6 +439,121 @@ export default function PrepararMisturaScreen() {
             setLoading(false);
         }
     };
+         // 🔥 NOVA FUNÇÃO: EDITAR MISTURA (BAGAÇO)
+    const handleEditarMistura = async () => {
+        if (!misturaEditando) return;
+
+        const novoPesoBag = parseFloat(novoPesoBagaco.replace(',', '.'));
+        if (isNaN(novoPesoBag) || novoPesoBag < 0) {
+            return Alert.alert('Erro', 'Informe um peso válido para o bagaço.');
+        }
+
+        const pesoBagacoAntigo = misturaEditando.pesoBagacoUtilizado || 0;
+        const diferencaBagaco = novoPesoBag - pesoBagacoAntigo;
+
+        // Se aumentou o bagaço, verifica se tem estoque
+        if (diferencaBagaco > 0 && diferencaBagaco > estoqueBagaco) {
+            return Alert.alert('Estoque Insuficiente', `Você precisa de mais ${diferencaBagaco.toFixed(2)}t de bagaço, mas só tem ${estoqueBagaco.toFixed(2)}t no estoque.`);
+        }
+
+        try {
+            setLoading(true);
+            const registros = await AsyncStorage.getItem('materiaisRegistrados');
+            let todosMateriais: MaterialEntry[] = registros ? JSON.parse(registros) : [];
+            const itensParaSincronizar: MaterialEntry[] = [];
+
+            // 1. Atualiza a mistura original
+            const pesoBioOriginal = parseFloat(misturaEditando.peso.replace(',', '.')) - pesoBagacoAntigo;
+            const novoPesoTotal = pesoBioOriginal + novoPesoBag;
+
+            const misturaAtualizada = { 
+                ...misturaEditando, 
+                peso: novoPesoTotal.toFixed(2),
+                pesoBagacoUtilizado: novoPesoBag,
+                sincronizado: false 
+            };
+
+            todosMateriais = todosMateriais.map(m => m.id === misturaEditando.id ? misturaAtualizada : m);
+            itensParaSincronizar.push(misturaAtualizada);
+
+            // 2. Lida com a diferença de Bagaço (Devolve ou Retira)
+            const timestamp = Date.now();
+            
+            if (diferencaBagaco !== 0) {
+                const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+                const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+                
+                if (diferencaBagaco < 0) {
+                    // Devolve bagaço para o estoque (ENTRADA)
+                    const qtdDevolvida = Math.abs(diferencaBagaco);
+                    const devolucaoBagaco: MaterialEntry = {
+                        id: timestamp.toString(),
+                        data: new Date().toLocaleDateString('pt-BR'),
+                        tipoMaterial: 'Bagaço de Cana',
+                        numeroMTR: 'AJUSTE',
+                        peso: qtdDevolvida.toFixed(2),
+                        origem: 'Ajuste de Mistura',
+                        destino: 'Estoque Bagaço',
+                        sincronizado: false,
+                        usado: false
+                    };
+                    todosMateriais.push(devolucaoBagaco);
+                    itensParaSincronizar.push(devolucaoBagaco);
+
+                    extrato.push({
+                        id: timestamp.toString(),
+                        data: new Date().toLocaleDateString('pt-BR'),
+                        hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                        tipo: 'ENTRADA',
+                        quantidade: qtdDevolvida,
+                        motivo: 'Ajuste de Mistura (Devolução)'
+                    });
+                } else {
+                    // Retira mais bagaço do estoque (SAÍDA)
+                    const consumoBagaco: MaterialEntry = {
+                        id: timestamp.toString(),
+                        data: new Date().toLocaleDateString('pt-BR'),
+                        tipoMaterial: 'Bagaço de Cana',
+                        numeroMTR: 'AJUSTE',
+                        peso: diferencaBagaco.toFixed(2),
+                        origem: 'Ajuste de Mistura',
+                        destino: 'Consumo Ajuste',
+                        sincronizado: false,
+                        usado: true // Já nasce usado para descontar do montante
+                    };
+                    todosMateriais.push(consumoBagaco);
+                    itensParaSincronizar.push(consumoBagaco);
+
+                    extrato.push({
+                        id: timestamp.toString(),
+                        data: new Date().toLocaleDateString('pt-BR'),
+                        hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                        tipo: 'SAIDA',
+                        quantidade: diferencaBagaco,
+                        motivo: 'Ajuste de Mistura (Consumo Extra)'
+                    });
+                }
+                await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+            }
+
+            await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(todosMateriais));
+
+            for (const item of itensParaSincronizar) {
+                await syncService.adicionarFila('material', item);
+            }
+
+            setShowModalEdit(false);
+            setMisturaEditando(null);
+            setNovoPesoBagaco('');
+            await loadData();
+            
+            Alert.alert('Sucesso ✅', 'Mistura atualizada com sucesso!');
+        } catch (error) {
+            console.error("Erro na edição:", error);
+            Alert.alert('Erro', 'Falha ao editar a mistura.');
+            setLoading(false);
+        }
+    };
 
     if (loading) return <ActivityIndicator style={{ flex: 1 }} color={PALETTE.verdePrimario} />;
 
@@ -447,8 +567,9 @@ export default function PrepararMisturaScreen() {
     } else if (resumoCalculo.pesoBagaco > 0) {
         textoBotaoSalvar = "Adicionar Bagaço";
     }
+   
 
-    return (
+        return (
         <SafeAreaView style={styles.container}>
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 
@@ -669,12 +790,27 @@ export default function PrepararMisturaScreen() {
                                 </View>
                                 
                                 {!mistura.usado && (
-                                    <TouchableOpacity 
-                                        style={{ padding: 10, backgroundColor: '#FFEBEE', borderRadius: 8 }}
-                                        onPress={() => handleExcluirMistura(mistura)}
-                                    >
-                                        <MaterialCommunityIcons name="delete-outline" size={24} color={PALETTE.terracota} />
-                                    </TouchableOpacity>
+                                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                                        {/* 🔥 NOVO BOTÃO DE EDITAR */}
+                                        <TouchableOpacity 
+                                            style={{ padding: 10, backgroundColor: '#E3F2FD', borderRadius: 8 }}
+                                            onPress={() => {
+                                                setMisturaEditando(mistura);
+                                                setNovoPesoBagaco(String(mistura.pesoBagacoUtilizado || 0));
+                                                setShowModalEdit(true);
+                                            }}
+                                        >
+                                            <MaterialCommunityIcons name="pencil" size={24} color="#0288D1" />
+                                        </TouchableOpacity>
+
+                                        {/* BOTÃO DE EXCLUIR (ESTORNAR) */}
+                                        <TouchableOpacity 
+                                            style={{ padding: 10, backgroundColor: '#FFEBEE', borderRadius: 8 }}
+                                            onPress={() => handleExcluirMistura(mistura)}
+                                        >
+                                            <MaterialCommunityIcons name="delete-outline" size={24} color={PALETTE.terracota} />
+                                        </TouchableOpacity>
+                                    </View>
                                 )}
                             </View>
                         );
@@ -682,6 +818,57 @@ export default function PrepararMisturaScreen() {
                 )}
 
             </ScrollView>
+
+            {/* 🔥 MODAL DE EDIÇÃO DE BAGAÇO */}
+            <Modal visible={showModalEdit} transparent animationType="fade" onRequestClose={() => setShowModalEdit(false)}>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}>
+                    <View style={{ backgroundColor: PALETTE.branco, borderRadius: 16, padding: 24 }}>
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: PALETTE.cinza, marginBottom: 16 }}>
+                            Editar Bagaço da Mistura
+                        </Text>
+                        
+                        <Text style={{ color: PALETTE.cinza, marginBottom: 16 }}>
+                            Mistura de {misturaEditando?.data}. Altere a quantidade de bagaço utilizada nesta mistura.
+                        </Text>
+
+                        <View style={styles.formGroup}>
+                            <Text style={styles.label}>Novo Peso do Bagaço (Ton)</Text>
+                            <View style={styles.inputBox}>
+                                <MaterialCommunityIcons name="scale-balance" size={20} color={PALETTE.cinza} style={styles.inputIcon} />
+                                <RNTextInput
+                                    style={styles.input}
+                                    value={novoPesoBagaco}
+                                    onChangeText={setNovoPesoBagaco}
+                                    keyboardType="decimal-pad"
+                                    autoFocus
+                                />
+                            </View>
+                            <Text style={{ color: PALETTE.cinza, fontSize: 12, marginTop: 8 }}>
+                                Estoque atual disponível: {estoqueBagaco.toFixed(2)}t
+                            </Text>
+                        </View>
+
+                        <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+                            <TouchableOpacity 
+                                style={[styles.btnCancel, { flex: 1, backgroundColor: PALETTE.sucesso, paddingVertical: 12, borderRadius: 8, alignItems: 'center' }]} 
+                                onPress={() => {
+                                    setShowModalEdit(false);
+                                    setMisturaEditando(null);
+                                }}
+                            >
+                                <Text style={{ color: PALETTE.branco, fontWeight: 'bold' }}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.btnSave, { flex: 1, backgroundColor: PALETTE.verdePrimario, paddingVertical: 12, borderRadius: 8, alignItems: 'center' }]} 
+                                onPress={handleEditarMistura}
+                            >
+                                <Text style={{ color: PALETTE.branco, fontWeight: 'bold' }}>Salvar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
         </SafeAreaView>
     );
 }
@@ -731,5 +918,21 @@ export const styles = StyleSheet.create({
     stockItem: { flex: 1, alignItems: 'center' },
     stockLabel: { color: '#E8EAF6', fontSize: 12, marginBottom: 4, textAlign: 'center' },
     stockValue: { color: PALETTE.branco, fontSize: 18, fontWeight: 'bold' },
-    stockDivider: { width: 1, height: 40, backgroundColor: '#3F51B5' }
+    stockDivider: { width: 1, height: 40, backgroundColor: '#3F51B5' },
+        // Adicione estes estilos dentro do seu StyleSheet.create({ ... })
+    btnCancel: {
+        backgroundColor: PALETTE.sucesso,
+        height: 52,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: PALETTE.branco
+    },
+    btnCancelText: { 
+        color: PALETTE.branco, 
+        fontWeight: '700', 
+        fontSize: 15 
+    },
+    
 });
