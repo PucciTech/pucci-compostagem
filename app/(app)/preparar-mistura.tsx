@@ -25,15 +25,15 @@ interface MaterialEntry {
 export default function PrepararMisturaScreen() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    
+
     // Estados da Mistura
     const [materiaisPatio, setMateriaisPatio] = useState<MaterialEntry[]>([]);
     const [selecionados, setSelecionados] = useState<string[]>([]);
     const [pesoBagaco, setPesoBagaco] = useState('');
-    
+
     // 🔥 NOVO: Estado do Histórico
     const [historicoMisturas, setHistoricoMisturas] = useState<MaterialEntry[]>([]);
-    
+
     // Estados DO ESTOQUE (MONTANTE)
     const [estoquePatio, setEstoquePatio] = useState(0);
     const [estoqueDep1, setEstoqueDep1] = useState(0);
@@ -41,7 +41,7 @@ export default function PrepararMisturaScreen() {
     const [estoqueBagaco, setEstoqueBagaco] = useState(0);
     const [mtrsNoPatio, setMtrsNoPatio] = useState<string[]>([]);
 
-        // 🔥 NOVO: Estados para Edição da Mistura
+    // 🔥 NOVO: Estados para Edição da Mistura
     const [showModalEdit, setShowModalEdit] = useState(false);
     const [misturaEditando, setMisturaEditando] = useState<MaterialEntry | null>(null);
     const [novoPesoBagaco, setNovoPesoBagaco] = useState('');
@@ -63,12 +63,12 @@ export default function PrepararMisturaScreen() {
             const registros = await AsyncStorage.getItem('materiaisRegistrados');
             if (registros) {
                 const materiais: MaterialEntry[] = JSON.parse(registros);
-                
+
                 // 1. Busca Biossólido puro aguardando mistura
-                const disponiveis = materiais.filter(m => 
-                    m.tipoMaterial === 'Biossólido' && 
-                    m.destino === 'Pátio de Mistura' && 
-                    !m.usado && 
+                const disponiveis = materiais.filter(m =>
+                    m.tipoMaterial === 'Biossólido' &&
+                    m.destino === 'Pátio de Mistura' &&
+                    !m.usado &&
                     !m.deletado
                 );
                 setMateriaisPatio(disponiveis.sort((a, b) => Number(a.id) - Number(b.id)));
@@ -90,7 +90,8 @@ export default function PrepararMisturaScreen() {
                             else if (destinoItem === 'Depósito 1') dep1 += peso;
                             else if (destinoItem === 'Depósito 2') dep2 += peso;
                         } else if (m.tipoMaterial && m.tipoMaterial.includes('Bagaço')) {
-                            bagaco += peso;
+                            // 🔥 CORREÇÃO: Pega apenas o MAIS RECENTE (maior ID = mais novo)
+                            bagaco = peso;
                         }
                     }
                 });
@@ -141,11 +142,11 @@ export default function PrepararMisturaScreen() {
     }, [selecionados, materiaisPatio, pesoBagaco]);
 
     // ===== 1. SALVAR NOVA MISTURA NO PÁTIO =====
-        const handleSalvarMistura = async () => {
+    const handleSalvarMistura = async () => {
         if (selecionados.length === 0 && (!pesoBagaco.trim() || resumoCalculo.pesoBagaco <= 0)) {
             return Alert.alert('Atenção', 'Selecione ao menos um caminhão ou informe o peso do bagaço.');
         }
-        
+
         if (resumoCalculo.pesoBagaco > estoqueBagaco) {
             return Alert.alert('Estoque Insuficiente', `Você tem apenas ${estoqueBagaco.toFixed(2)}t de bagaço disponível.`);
         }
@@ -155,7 +156,7 @@ export default function PrepararMisturaScreen() {
             const registros = await AsyncStorage.getItem('materiaisRegistrados');
             let todosMateriais: MaterialEntry[] = registros ? JSON.parse(registros) : [];
             const itensParaSincronizar: MaterialEntry[] = [];
-            
+
             const mtrsDosCaminhoes = materiaisPatio
                 .filter(m => selecionados.includes(m.id))
                 .map(m => m.numeroMTR)
@@ -186,12 +187,12 @@ export default function PrepararMisturaScreen() {
                 numeroMTR: `LOTE-${timestamp.toString().slice(-4)}`,
                 peso: resumoCalculo.pesoTotal.toFixed(2),
                 origem: 'Processo Interno',
-                destino: 'Pátio de Mistura', 
+                destino: 'Pátio de Mistura',
                 sincronizado: false,
                 usado: false,
                 mtrsOriginais: mtrsDosCaminhoes,
-                itensOriginaisIds: selecionados, 
-                pesoBagacoUtilizado: resumoCalculo.pesoBagaco 
+                itensOriginaisIds: selecionados,
+                pesoBagacoUtilizado: resumoCalculo.pesoBagaco
             };
 
             todosMateriais.push(novaMistura);
@@ -238,7 +239,7 @@ export default function PrepararMisturaScreen() {
             setSelecionados([]);
             setPesoBagaco('');
             await loadData();
-            
+
             let msgSucesso = `${resumoCalculo.pesoTotal.toFixed(2)}t adicionadas ao Pátio.`;
             if (resumoCalculo.pesoBagaco > 0) msgSucesso += `\n\nBagaço: ${resumoCalculo.pesoBagaco.toFixed(2)}t`;
             if (selecionados.length > 0) msgSucesso += `\nBiossólido: ${resumoCalculo.pesoBiossolido.toFixed(2)}t`;
@@ -262,8 +263,8 @@ export default function PrepararMisturaScreen() {
             `Deseja realmente desfazer esta mistura de ${mistura.peso}t?\n\nO Biossólido e o Bagaço voltarão separados para os seus estoques de origem.`,
             [
                 { text: 'Cancelar', style: 'cancel' },
-                { 
-                    text: 'Sim, Estornar', 
+                {
+                    text: 'Sim, Estornar',
                     style: 'destructive',
                     onPress: async () => {
                         try {
@@ -325,7 +326,7 @@ export default function PrepararMisturaScreen() {
                                 };
                                 todosMateriais.push(devolucaoBagaco);
                                 itensParaSincronizar.push(devolucaoBagaco);
-                                
+
                                 // 📝 SENSOR 2: ESTORNO DE MISTURA (ENTRADA DE BAGAÇO NO EXTRATO)
                                 const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
                                 const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
@@ -349,7 +350,7 @@ export default function PrepararMisturaScreen() {
                             if (typeof loadData === 'function') {
                                 await loadData();
                             }
-                            
+
                             // 🔥 Mostra exatamente quanto devolveu de cada um
                             Alert.alert('Sucesso ✅', `Mistura estornada!\n\nBiossólido devolvido: ${pesoBioDevolver.toFixed(2)}t\nBagaço devolvido: ${pesoBagacoDevolver.toFixed(2)}t`);
                         } catch (error) {
@@ -379,7 +380,7 @@ export default function PrepararMisturaScreen() {
                 const destinoItem = m.destino ? m.destino.trim() : '';
                 return m.tipoMaterial === 'Mistura Preparada' && destinoItem === 'Pátio de Mistura' && !m.usado && !m.deletado;
             });
-            
+
             const todosMtrsDoPatio = lotesPatio.flatMap(l => l.mtrsOriginais || []);
             const mtrsUnicos = [...new Set(todosMtrsDoPatio)];
 
@@ -439,7 +440,7 @@ export default function PrepararMisturaScreen() {
             setLoading(false);
         }
     };
-         // 🔥 NOVA FUNÇÃO: EDITAR MISTURA (BAGAÇO)
+    // 🔥 NOVA FUNÇÃO: EDITAR MISTURA (BAGAÇO)
     const handleEditarMistura = async () => {
         if (!misturaEditando) return;
 
@@ -466,11 +467,11 @@ export default function PrepararMisturaScreen() {
             const pesoBioOriginal = parseFloat(misturaEditando.peso.replace(',', '.')) - pesoBagacoAntigo;
             const novoPesoTotal = pesoBioOriginal + novoPesoBag;
 
-            const misturaAtualizada = { 
-                ...misturaEditando, 
+            const misturaAtualizada = {
+                ...misturaEditando,
                 peso: novoPesoTotal.toFixed(2),
                 pesoBagacoUtilizado: novoPesoBag,
-                sincronizado: false 
+                sincronizado: false
             };
 
             todosMateriais = todosMateriais.map(m => m.id === misturaEditando.id ? misturaAtualizada : m);
@@ -478,11 +479,11 @@ export default function PrepararMisturaScreen() {
 
             // 2. Lida com a diferença de Bagaço (Devolve ou Retira)
             const timestamp = Date.now();
-            
+
             if (diferencaBagaco !== 0) {
                 const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
                 const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
-                
+
                 if (diferencaBagaco < 0) {
                     // Devolve bagaço para o estoque (ENTRADA)
                     const qtdDevolvida = Math.abs(diferencaBagaco);
@@ -546,7 +547,7 @@ export default function PrepararMisturaScreen() {
             setMisturaEditando(null);
             setNovoPesoBagaco('');
             await loadData();
-            
+
             Alert.alert('Sucesso ✅', 'Mistura atualizada com sucesso!');
         } catch (error) {
             console.error("Erro na edição:", error);
@@ -567,24 +568,23 @@ export default function PrepararMisturaScreen() {
     } else if (resumoCalculo.pesoBagaco > 0) {
         textoBotaoSalvar = "Adicionar Bagaço";
     }
-   
 
-        return (
+
+    return (
         <SafeAreaView style={styles.container}>
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                
+
                 <View style={styles.header}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                        <MaterialCommunityIcons name="arrow-left" size={24} color={PALETTE.cinzaEscuro} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Mistura e Estoque</Text>
                     <View style={styles.backButton} />
                 </View>
 
                 {/* PAINEL DE ESTOQUE VIVO (MONTANTES) */}
-                <View style={[styles.formCard, { backgroundColor: '#1A237E', borderColor: '#1A237E' }]}>
+                <View style={[styles.formCard, { backgroundColor: PALETTE.cinza, borderColor: PALETTE.verdePrimario, marginTop: 24 }]}>
                     <Text style={[styles.formTitle, { color: PALETTE.branco, marginBottom: 16 }]}>📦 Visão Geral do Estoque</Text>
-                    
+
                     <View style={styles.stockRow}>
                         <View style={styles.stockItem}>
                             <Text style={styles.stockLabel}>Pátio de Mistura</Text>
@@ -603,11 +603,11 @@ export default function PrepararMisturaScreen() {
                     </View>
 
                     {mtrsNoPatio.length > 0 && (
-                        <View style={{ marginTop: 16, backgroundColor: 'rgba(255,255,255,0.1)', padding: 12, borderRadius: 8 }}>
-                            <Text style={{ color: '#E8EAF6', fontSize: 11, fontWeight: 'bold', marginBottom: 4 }}>
+                        <View style={{ marginTop: 16, backgroundColor: 'rgba(255,255,255,0.15)', padding: 12, borderRadius: 12 }}>
+                            <Text style={{ color: PALETTE.branco, fontSize: 11, fontWeight: '800', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                                 <MaterialCommunityIcons name="text-box-search-outline" size={12} /> MTRs NESTE MONTANTE:
                             </Text>
-                            <Text style={{ color: PALETTE.branco, fontSize: 12, lineHeight: 18 }}>
+                            <Text style={{ color: PALETTE.branco, fontSize: 13, fontWeight: '600', lineHeight: 20 }}>
                                 {mtrsNoPatio.join(', ')}
                             </Text>
                         </View>
@@ -616,9 +616,9 @@ export default function PrepararMisturaScreen() {
 
                 {/* ÁREA DE TRANSFERÊNCIA */}
                 {estoquePatio > 0 && (
-                    <View style={[styles.formCard, { borderColor: '#0288D1', borderWidth: 1 }]}>
-                        <Text style={[styles.formTitle, { color: '#0288D1' }]}>🔄 Transferir do Pátio para Depósito</Text>
-                        
+                    <View style={[styles.formCard, { borderColor: PALETTE.verdePrimario, borderWidth: 1 }]}>
+                        <Text style={[styles.formTitle, { color: PALETTE.cinza }]}>Transferir do Pátio para Depósito</Text>
+
                         <View style={styles.formGroup}>
                             <Text style={styles.label}>Quantidade (Ton)</Text>
                             <View style={styles.inputBox}>
@@ -642,15 +642,15 @@ export default function PrepararMisturaScreen() {
                                         style={[styles.optionBtn, destinoTransferencia === dest && styles.optionBtnActive]}
                                         onPress={() => setDestinoTransferencia(dest)}
                                     >
-                                        <MaterialCommunityIcons name="warehouse" size={20} color={destinoTransferencia === dest ? PALETTE.verdePrimario : PALETTE.cinza} style={{ marginBottom: 4 }} />
+                                        <MaterialCommunityIcons name="warehouse" size={20} color={destinoTransferencia === dest ? PALETTE.cinza : PALETTE.cinza} style={{ marginBottom: 4 }} />
                                         <Text style={[styles.optionText, destinoTransferencia === dest && styles.optionTextActive]}>{dest}</Text>
                                     </TouchableOpacity>
                                 ))}
                             </View>
                         </View>
 
-                        <TouchableOpacity 
-                            style={[styles.btnSave, { backgroundColor: '#0288D1', marginTop: 8 }]} 
+                        <TouchableOpacity
+                            style={[styles.btnSave, { backgroundColor: PALETTE.cinza, marginTop: 8 }]}
                             onPress={handleTransferir}
                         >
                             <Text style={styles.btnSaveText}>Confirmar Transferência</Text>
@@ -658,8 +658,8 @@ export default function PrepararMisturaScreen() {
                     </View>
                 )}
 
-                <View style={{ height: 1, backgroundColor: PALETTE.cinzaClaro, marginVertical: 20 }} />
-                <Text style={{ fontSize: 18, fontWeight: 'bold', color: PALETTE.cinzaEscuro, marginBottom: 16 }}>
+                <View style={{ height: 1, backgroundColor: PALETTE.cinzaClaro, marginVertical: 24, marginHorizontal: 24 }} />
+                <Text style={{ fontSize: 18, fontWeight: '800', color: PALETTE.preto, marginBottom: 16, marginHorizontal: 24 }}>
                     ➕ Preparar Nova Mistura
                 </Text>
 
@@ -667,29 +667,29 @@ export default function PrepararMisturaScreen() {
                 <View style={styles.formCard}>
                     <Text style={styles.formTitle}>1. Selecione os Biossólidos</Text>
                     {materiaisPatio.length === 0 ? (
-                        <View style={[styles.emptyState, { padding: 20 }]}>
+                        <View style={styles.emptyState}>
                             <MaterialCommunityIcons name="truck-check-outline" size={40} color={PALETTE.cinzaClaro} />
-                            <Text style={[styles.emptyText, { marginTop: 10 }]}>Nenhum biossólido aguardando no Pátio de Mistura.</Text>
+                            <Text style={styles.emptyText}>Nenhum biossólido aguardando no Pátio de Mistura.</Text>
                         </View>
                     ) : (
                         materiaisPatio.map(item => {
                             const isSelected = selecionados.includes(item.id);
                             return (
-                                <TouchableOpacity 
-                                    key={item.id} 
+                                <TouchableOpacity
+                                    key={item.id}
                                     style={[
-                                        { padding: 12, borderRadius: 8, borderWidth: 1, borderColor: PALETTE.cinzaClaro, marginBottom: 10, flexDirection: 'row', alignItems: 'center' },
-                                        isSelected && { borderColor: PALETTE.verdePrimario, backgroundColor: '#E8F5E9' }
+                                        styles.biossolidoItem,
+                                        isSelected && styles.biossolidoItemActive
                                     ]}
                                     onPress={() => toggleSelecao(item.id)}
                                     activeOpacity={0.7}
                                 >
                                     <MaterialCommunityIcons name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"} size={24} color={isSelected ? PALETTE.verdePrimario : PALETTE.cinza} style={{ marginRight: 12 }} />
                                     <View style={{ flex: 1 }}>
-                                        <Text style={{ fontWeight: 'bold', color: PALETTE.cinzaEscuro }}>{item.data} - {item.origem}</Text>
-                                        <Text style={{ color: PALETTE.cinza, fontSize: 12 }}>MTR: {item.numeroMTR}</Text>
+                                        <Text style={{ fontWeight: '800', color: PALETTE.preto, fontSize: 15 }}>{item.data} - {item.origem}</Text>
+                                        <Text style={{ color: PALETTE.cinza, fontSize: 12, fontWeight: '600', marginTop: 2 }}>MTR: {item.numeroMTR}</Text>
                                     </View>
-                                    <Text style={{ fontWeight: 'bold', color: PALETTE.verdePrimario }}>{item.peso} t</Text>
+                                    <Text style={{ fontWeight: '900', color: isSelected ? PALETTE.verdePrimario : PALETTE.preto, fontSize: 16 }}>{item.peso} t</Text>
                                 </TouchableOpacity>
                             );
                         })
@@ -700,11 +700,11 @@ export default function PrepararMisturaScreen() {
                 <View style={styles.formCard}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                         <Text style={styles.formTitle}>2. Adicionar Bagaço</Text>
-                        <View style={{ backgroundColor: '#FFF3E0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
-                            <Text style={{ color: '#F57C00', fontSize: 12, fontWeight: 'bold' }}>Estoque: {estoqueBagaco.toFixed(2)}t</Text>
+                        <View style={{ backgroundColor: PALETTE.terracotaClaro, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
+                            <Text style={{ color: PALETTE.terracota, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' }}>Estoque: {estoqueBagaco.toFixed(2)}t</Text>
                         </View>
                     </View>
-                    
+
                     <View style={styles.formGroup}>
                         <Text style={styles.label}>Peso do Bagaço a utilizar (Ton)</Text>
                         <View style={styles.inputBox}>
@@ -718,12 +718,12 @@ export default function PrepararMisturaScreen() {
                             />
                         </View>
                         {estoqueBagaco <= 0 && (
-                            <Text style={{ color: PALETTE.terracota, fontSize: 12, marginTop: 8 }}>
+                            <Text style={{ color: PALETTE.erro, fontSize: 12, marginTop: 8, fontWeight: '600' }}>
                                 ⚠️ Você não tem bagaço no estoque. Registre a entrada primeiro.
                             </Text>
                         )}
                         {resumoCalculo.pesoBagaco > estoqueBagaco && (
-                            <Text style={{ color: PALETTE.terracota, fontSize: 12, marginTop: 8 }}>
+                            <Text style={{ color: PALETTE.erro, fontSize: 12, marginTop: 8, fontWeight: '600' }}>
                                 ⚠️ O peso informado é maior que o estoque disponível.
                             </Text>
                         )}
@@ -731,25 +731,25 @@ export default function PrepararMisturaScreen() {
                 </View>
 
                 {/* RESUMO E BOTÃO DE SALVAR */}
-                <View style={[styles.formCard, { backgroundColor: '#F8F9FA', borderColor: PALETTE.verdePrimario, borderWidth: 1 }]}>
+                <View style={[styles.formCard, { backgroundColor: PALETTE.verdeCard, borderColor: PALETTE.verdePrimario, borderWidth: 1.5 }]}>
                     <Text style={[styles.formTitle, { color: PALETTE.verdePrimario }]}>Resumo da Mistura</Text>
-                    
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <Text style={{ color: PALETTE.cinzaEscuro }}>Biossólido ({resumoCalculo.qtdCaminhoes} caminhões):</Text>
-                        <Text style={{ fontWeight: 'bold' }}>{resumoCalculo.pesoBiossolido.toFixed(2)} t</Text>
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <Text style={{ color: PALETTE.preto, fontWeight: '600' }}>Biossólido ({resumoCalculo.qtdCaminhoes} caminhões):</Text>
+                        <Text style={{ fontWeight: '800', color: PALETTE.preto }}>{resumoCalculo.pesoBiossolido.toFixed(2)} t</Text>
                     </View>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <Text style={{ color: PALETTE.cinzaEscuro }}>Bagaço Consumido:</Text>
-                        <Text style={{ fontWeight: 'bold' }}>{resumoCalculo.pesoBagaco.toFixed(2)} t</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <Text style={{ color: PALETTE.preto, fontWeight: '600' }}>Bagaço Consumido:</Text>
+                        <Text style={{ fontWeight: '800', color: PALETTE.preto }}>{resumoCalculo.pesoBagaco.toFixed(2)} t</Text>
                     </View>
-                    <View style={{ height: 1, backgroundColor: PALETTE.cinzaClaro, marginVertical: 8 }} />
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                        <Text style={{ fontWeight: 'bold', fontSize: 16, color: PALETTE.cinzaEscuro }}>Total a adicionar no Pátio:</Text>
-                        <Text style={{ fontWeight: 'bold', fontSize: 18, color: PALETTE.verdePrimario }}>+ {resumoCalculo.pesoTotal.toFixed(2)} t</Text>
+                    <View style={{ height: 1, backgroundColor: 'rgba(46, 79, 54, 0.1)', marginVertical: 12 }} />
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontWeight: '800', fontSize: 15, color: PALETTE.preto, textTransform: 'uppercase' }}>Total no Pátio:</Text>
+                        <Text style={{ fontWeight: '900', fontSize: 20, color: PALETTE.verdePrimario }}>+ {resumoCalculo.pesoTotal.toFixed(2)} t</Text>
                     </View>
 
-                    <TouchableOpacity 
-                        style={[styles.btnSave, { marginTop: 20 }, isSaveDisabled && { opacity: 0.5 }]} 
+                    <TouchableOpacity
+                        style={[styles.btnSave, { marginTop: 24 }, isSaveDisabled && { opacity: 0.5 }]}
                         onPress={handleSalvarMistura}
                         disabled={isSaveDisabled}
                     >
@@ -758,57 +758,58 @@ export default function PrepararMisturaScreen() {
                 </View>
 
                 {/* 🔥 3. NOVO: HISTÓRICO DE MISTURAS */}
-                <View style={{ height: 1, backgroundColor: PALETTE.cinzaClaro, marginVertical: 20 }} />
-                <Text style={{ fontSize: 18, fontWeight: 'bold', color: PALETTE.cinzaEscuro, marginBottom: 16 }}>
+                <View style={{ height: 1, backgroundColor: PALETTE.cinzaClaro, marginVertical: 24, marginHorizontal: 24 }} />
+                <Text style={{ fontSize: 18, fontWeight: '800', color: PALETTE.preto, marginBottom: 16, marginHorizontal: 24 }}>
                     🕒 Histórico de Misturas (Pátio)
                 </Text>
 
                 {historicoMisturas.length === 0 ? (
-                    <View style={[styles.emptyState, { padding: 20, backgroundColor: PALETTE.branco, borderRadius: 12 }]}>
+                    <View style={[styles.emptyState, { marginHorizontal: 24, marginBottom: 24 }]}>
                         <MaterialCommunityIcons name="history" size={40} color={PALETTE.cinzaClaro} />
-                        <Text style={[styles.emptyText, { marginTop: 10 }]}>Nenhuma mistura registrada recentemente.</Text>
+                        <Text style={[styles.emptyText, { marginTop: 12 }]}>Nenhuma mistura registrada recentemente.</Text>
                     </View>
                 ) : (
                     historicoMisturas.map(mistura => {
                         const bioUtilizado = parseFloat(mistura.peso) - (mistura.pesoBagacoUtilizado || 0);
                         const bagUtilizado = mistura.pesoBagacoUtilizado || 0;
-                        
+
                         return (
-                            <View key={mistura.id} style={[styles.formCard, { padding: 12, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                            <View key={mistura.id} style={styles.historicoCard}>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={{ fontWeight: 'bold', color: PALETTE.cinzaEscuro, fontSize: 16 }}>
+                                    <Text style={{ fontWeight: '900', color: PALETTE.preto, fontSize: 16 }}>
                                         {mistura.data} - {mistura.peso}t
                                     </Text>
-                                    <Text style={{ color: PALETTE.cinza, fontSize: 12, marginTop: 2 }}>
+                                    <Text style={{ color: PALETTE.cinza, fontSize: 13, marginTop: 4, fontWeight: '600' }}>
                                         Biossólido: {bioUtilizado.toFixed(2)}t | Bagaço: {bagUtilizado.toFixed(2)}t
                                     </Text>
                                     {mistura.usado && (
-                                        <Text style={{ color: PALETTE.warning, fontSize: 11, marginTop: 4, fontWeight: 'bold' }}>
-                                            ⚠️ Já transferido (Não pode ser estornado)
-                                        </Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, backgroundColor: PALETTE.warningClaro, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' }}>
+                                            <MaterialCommunityIcons name="alert" size={12} color={PALETTE.warning} style={{ marginRight: 4 }} />
+                                            <Text style={{ color: PALETTE.warning, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' }}>
+                                                Já transferido
+                                            </Text>
+                                        </View>
                                     )}
                                 </View>
-                                
+
                                 {!mistura.usado && (
-                                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                                        {/* 🔥 NOVO BOTÃO DE EDITAR */}
-                                        <TouchableOpacity 
-                                            style={{ padding: 10, backgroundColor: '#E3F2FD', borderRadius: 8 }}
+                                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                                        <TouchableOpacity
+                                            style={styles.iconButton}
                                             onPress={() => {
                                                 setMisturaEditando(mistura);
                                                 setNovoPesoBagaco(String(mistura.pesoBagacoUtilizado || 0));
                                                 setShowModalEdit(true);
                                             }}
                                         >
-                                            <MaterialCommunityIcons name="pencil" size={24} color="#0288D1" />
+                                            <MaterialCommunityIcons name="pencil" size={20} color={PALETTE.cinza} />
                                         </TouchableOpacity>
 
-                                        {/* BOTÃO DE EXCLUIR (ESTORNAR) */}
-                                        <TouchableOpacity 
-                                            style={{ padding: 10, backgroundColor: '#FFEBEE', borderRadius: 8 }}
+                                        <TouchableOpacity
+                                            style={[styles.iconButton, { backgroundColor: PALETTE.erroClaro }]}
                                             onPress={() => handleExcluirMistura(mistura)}
                                         >
-                                            <MaterialCommunityIcons name="delete-outline" size={24} color={PALETTE.terracota} />
+                                            <MaterialCommunityIcons name="delete-outline" size={20} color={PALETTE.erro} />
                                         </TouchableOpacity>
                                     </View>
                                 )}
@@ -821,13 +822,13 @@ export default function PrepararMisturaScreen() {
 
             {/* 🔥 MODAL DE EDIÇÃO DE BAGAÇO */}
             <Modal visible={showModalEdit} transparent animationType="fade" onRequestClose={() => setShowModalEdit(false)}>
-                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}>
-                    <View style={{ backgroundColor: PALETTE.branco, borderRadius: 16, padding: 24 }}>
-                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: PALETTE.cinza, marginBottom: 16 }}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>
                             Editar Bagaço da Mistura
                         </Text>
-                        
-                        <Text style={{ color: PALETTE.cinza, marginBottom: 16 }}>
+
+                        <Text style={{ color: PALETTE.cinza, marginBottom: 20, fontSize: 14, fontWeight: '500', textAlign: 'center' }}>
                             Mistura de {misturaEditando?.data}. Altere a quantidade de bagaço utilizada nesta mistura.
                         </Text>
 
@@ -843,26 +844,26 @@ export default function PrepararMisturaScreen() {
                                     autoFocus
                                 />
                             </View>
-                            <Text style={{ color: PALETTE.cinza, fontSize: 12, marginTop: 8 }}>
-                                Estoque atual disponível: {estoqueBagaco.toFixed(2)}t
+                            <Text style={{ color: PALETTE.cinza, fontSize: 12, marginTop: 8, fontWeight: '600', textAlign: 'right' }}>
+                                Estoque disponível: <Text style={{ color: PALETTE.cinza, fontWeight: '800' }}>{estoqueBagaco.toFixed(2)}t</Text>
                             </Text>
                         </View>
 
-                        <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
-                            <TouchableOpacity 
-                                style={[styles.btnCancel, { flex: 1, backgroundColor: PALETTE.sucesso, paddingVertical: 12, borderRadius: 8, alignItems: 'center' }]} 
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={styles.modalBtnCancelar}
                                 onPress={() => {
                                     setShowModalEdit(false);
                                     setMisturaEditando(null);
                                 }}
                             >
-                                <Text style={{ color: PALETTE.branco, fontWeight: 'bold' }}>Cancelar</Text>
+                                <Text style={styles.modalBtnCancelarText}>Cancelar</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity 
-                                style={[styles.btnSave, { flex: 1, backgroundColor: PALETTE.verdePrimario, paddingVertical: 12, borderRadius: 8, alignItems: 'center' }]} 
+                            <TouchableOpacity
+                                style={styles.modalBtnConfirmar}
                                 onPress={handleEditarMistura}
                             >
-                                <Text style={{ color: PALETTE.branco, fontWeight: 'bold' }}>Salvar</Text>
+                                <Text style={styles.modalBtnConfirmarText}>Salvar</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -873,66 +874,85 @@ export default function PrepararMisturaScreen() {
     );
 }
 
-// ===== ESTILOS E PALETA =====
+// ===== NOVO DESIGN SYSTEM (PADRÃO PUCCI) =====
 export const PALETTE = {
-    verdePrimario: '#2E7D32',
-    cinza: '#9E9E9E',
-    cinzaClaro: '#E0E0E0',
-    cinzaEscuro: '#424242',
+    verdePrimario: '#2E4F36',
+    verdeClaro: '#F4F7F4',
+    verdeCard: '#E8EFE9',
+    terracota: '#B16338',
+    terracotaClaro: '#FDF3EE',
     branco: '#FFFFFF',
-    terracota: '#BF360C',
-    sucesso: '#4CAF50',
-    warning: '#FF9800',
-    azulPiscinao: '#0288D1'
+    preto: '#1A2B22',
+    cinza: '#6B7A71',
+    cinzaClaro: '#E1E8E3',
+    erro: '#DC3545',
+    erroClaro: '#FCEAEA',
+    sucesso: '#28A745',
+    sucessoClaro: '#EAF6EC',
+    warning: '#EAB308',
+    warningClaro: '#FEF5E7',
+    info: '#0D6EFD',
+    infoClaro: '#E7F1FF',
+    azulPiscinao: '#0D6EFD',
 };
 
 export const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F5F5F5' },
-    scrollContent: { padding: 16, paddingBottom: 40 },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-    headerTitle: { fontSize: 20, fontWeight: 'bold', color: PALETTE.cinzaEscuro },
-    infoBox: { flexDirection: 'row', backgroundColor: '#FFF3E0', padding: 16, borderRadius: 12, marginBottom: 20, alignItems: 'center' },
-    infoIcon: { marginRight: 16 },
-    infoContent: { flex: 1 },
-    infoTitle: { fontSize: 16, fontWeight: 'bold', color: PALETTE.terracota },
-    infoText: { fontSize: 14, color: PALETTE.cinzaEscuro, marginTop: 4 },
-    formCard: { backgroundColor: PALETTE.branco, borderRadius: 12, padding: 16, marginBottom: 20, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
-    formTitle: { fontSize: 18, fontWeight: 'bold', color: PALETTE.cinzaEscuro, marginBottom: 0 },
+    container: { flex: 1, backgroundColor: PALETTE.verdeClaro },
+    scrollContent: { paddingBottom: 40 },
+
+    // HEADER PADRÃO
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20, backgroundColor: PALETTE.branco, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro },
+    backButton: { width: 40, alignItems: 'flex-start' },
+    headerTitle: { fontSize: 18, fontWeight: '800', color: PALETTE.preto },
+
+    // FORMULÁRIOS E CARDS
+    formCard: { backgroundColor: PALETTE.branco, marginHorizontal: 24, borderRadius: 16, padding: 20, marginBottom: 20, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 8 },
+    formTitle: { fontSize: 16, fontWeight: '800', color: PALETTE.preto, marginBottom: 16, textTransform: 'uppercase', letterSpacing: 0.5 },
     formGroup: { marginBottom: 16 },
-    label: { fontSize: 14, fontWeight: 'bold', color: PALETTE.cinzaEscuro, marginBottom: 8 },
-    inputBox: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: PALETTE.cinzaClaro, borderRadius: 8, paddingHorizontal: 12, backgroundColor: '#FAFAFA' },
-    inputIcon: { marginRight: 8 },
-    input: { flex: 1, height: 48, fontSize: 16, color: PALETTE.cinzaEscuro },
-    optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    optionBtn: { flex: 1, minWidth: '45%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, borderWidth: 1, borderColor: PALETTE.cinzaClaro, borderRadius: 8, backgroundColor: '#FAFAFA' },
-    optionBtnActive: { borderColor: PALETTE.verdePrimario, backgroundColor: '#E8F5E9' },
-    optionText: { fontSize: 14, color: PALETTE.cinza, fontWeight: '500' },
-    optionTextActive: { color: PALETTE.verdePrimario, fontWeight: 'bold' },
-    btnSave: { backgroundColor: PALETTE.verdePrimario, padding: 16, borderRadius: 8, alignItems: 'center' },
-    btnSaveText: { color: PALETTE.branco, fontSize: 16, fontWeight: 'bold' },
-    emptyState: { alignItems: 'center', justifyContent: 'center', padding: 20 },
-    emptyText: { color: PALETTE.cinza, fontSize: 16, textAlign: 'center' },
-    
+    label: { fontSize: 12, fontWeight: '700', color: PALETTE.cinza, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+
+    // INPUTS
+    inputBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: PALETTE.verdeClaro, borderRadius: 12, paddingHorizontal: 16, height: 52, borderWidth: 1, borderColor: PALETTE.cinzaClaro },
+    inputIcon: { marginRight: 12 },
+    input: { flex: 1, fontSize: 15, fontWeight: '600', color: PALETTE.preto },
+
+    // BOTÕES DE OPÇÃO
+    optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+    optionBtn: { flex: 1, minWidth: '45%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderWidth: 1, borderColor: PALETTE.cinzaClaro, borderRadius: 12, backgroundColor: PALETTE.verdeClaro },
+    optionBtnActive: { borderColor: PALETTE.verdePrimario, backgroundColor: PALETTE.cinzaClaro, borderWidth: 1.5 },
+    optionText: { fontSize: 13, color: PALETTE.cinza, fontWeight: '700' },
+    optionTextActive: { color: PALETTE.cinza, fontWeight: '800' },
+
+    // BOTÃO SALVAR
+    btnSave: { height: 56, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 10, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, backgroundColor: PALETTE.verdePrimario },
+    btnSaveText: { color: PALETTE.branco, fontSize: 16, fontWeight: '800' },
+
+    // EMPTY STATE
+    emptyState: { alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: PALETTE.branco, borderRadius: 16, borderWidth: 1, borderColor: PALETTE.cinzaClaro },
+    emptyText: { color: PALETTE.cinza, fontSize: 14, fontWeight: '600', textAlign: 'center', marginTop: 12 },
+
+    // ESTOQUE VIVO
     stockRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     stockItem: { flex: 1, alignItems: 'center' },
-    stockLabel: { color: '#E8EAF6', fontSize: 12, marginBottom: 4, textAlign: 'center' },
-    stockValue: { color: PALETTE.branco, fontSize: 18, fontWeight: 'bold' },
-    stockDivider: { width: 1, height: 40, backgroundColor: '#3F51B5' },
-        // Adicione estes estilos dentro do seu StyleSheet.create({ ... })
-    btnCancel: {
-        backgroundColor: PALETTE.sucesso,
-        height: 52,
-        borderRadius: 12,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: PALETTE.branco
-    },
-    btnCancelText: { 
-        color: PALETTE.branco, 
-        fontWeight: '700', 
-        fontSize: 15 
-    },
-    
+    stockLabel: { color: PALETTE.cinzaClaro, fontSize: 11, marginBottom: 6, textAlign: 'center', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+    stockValue: { color: PALETTE.branco, fontSize: 20, fontWeight: '900' },
+    stockDivider: { width: 1, height: 40, backgroundColor: 'rgba(255,255,255,0.2)' },
+
+    // LISTA BIOSSÓLIDOS
+    biossolidoItem: { padding: 16, borderRadius: 12, borderWidth: 1, borderColor: PALETTE.cinzaClaro, marginBottom: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: PALETTE.branco },
+    biossolidoItemActive: { borderColor: PALETTE.verdePrimario, backgroundColor: PALETTE.verdeCard, borderWidth: 1.5 },
+
+    // HISTÓRICO
+    historicoCard: { backgroundColor: PALETTE.branco, marginHorizontal: 24, borderRadius: 16, padding: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4, borderWidth: 1, borderColor: PALETTE.cinzaClaro },
+    iconButton: { width: 40, height: 40, borderRadius: 12, backgroundColor: PALETTE.cinzaClaro, alignItems: 'center', justifyContent: 'center' },
+
+    // MODAL
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(26, 43, 34, 0.6)', justifyContent: 'center', padding: 24 },
+    modalContent: { backgroundColor: PALETTE.branco, borderRadius: 20, padding: 24 },
+    modalTitle: { fontSize: 18, fontWeight: '900', color: PALETTE.preto, textAlign: 'center', marginBottom: 8 },
+    modalButtons: { flexDirection: 'row', gap: 12, marginTop: 24 },
+    modalBtnCancelar: { flex: 1, paddingVertical: 14, backgroundColor: PALETTE.verdeClaro, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: PALETTE.cinzaClaro },
+    modalBtnCancelarText: { fontWeight: '700', color: PALETTE.cinza, fontSize: 15 },
+    modalBtnConfirmar: { flex: 1, paddingVertical: 14, backgroundColor: PALETTE.verdePrimario, borderRadius: 12, alignItems: 'center' },
+    modalBtnConfirmarText: { fontWeight: '700', color: PALETTE.branco, fontSize: 15 },
 });

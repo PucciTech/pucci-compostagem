@@ -152,7 +152,7 @@ export default function NovaLeiraScreen() {
   const [pesoManualBagaco, setPesoManualBagaco] = useState('12');
   const [dataManual, setDataManual] = useState(new Date().toLocaleDateString('pt-BR'));
 
-  
+
   // Estados Seleção de Piscinão / Local
   const [piscinaoSelecionado, setPiscinaoSelecionado] = useState('Piscinão 1');
   const [listaPiscinoes, setListaPiscinoes] = useState(['Piscinão 1', 'Piscinão 2', 'Piscinão 3', 'Piscinão 4', 'Pátio de Mistura', 'Depósito 1', 'Depósito 2']);
@@ -166,7 +166,7 @@ export default function NovaLeiraScreen() {
   const [mtrsDep1, setMtrsDep1] = useState<string[]>([]);
   const [mtrsDep2, setMtrsDep2] = useState<string[]>([]);
   const [estoqueBagaco, setEstoqueBagaco] = useState(0); // 🔥 ADICIONE ESTA LINHA
-  
+
 
 
   // Modal Novo Piscinão
@@ -203,16 +203,16 @@ export default function NovaLeiraScreen() {
 
         // Lógica da Mistura
         if (item.tipoMaterial === 'Mistura Preparada' || ['Pátio de Mistura', 'Depósito 1', 'Depósito 2'].includes(destinoItem)) {
-          const peso = parsePeso(item.peso); 
+          const peso = parsePeso(item.peso);
           if (destinoItem === 'Pátio de Mistura') { patio += peso; if (item.mtrsOriginais) mPatio.push(...item.mtrsOriginais); }
           else if (destinoItem === 'Depósito 1') { dep1 += peso; if (item.mtrsOriginais) mDep1.push(...item.mtrsOriginais); }
           else if (destinoItem === 'Depósito 2') { dep2 += peso; if (item.mtrsOriginais) mDep2.push(...item.mtrsOriginais); }
-          return false; 
+          return false;
         }
 
-        // 🔥 LÓGICA DO BAGAÇO: Soma o estoque e esconde da lista
+        // 🔥 LÓGICA DO BAGAÇO: CORRIGIDA - Pega apenas o MAIS RECENTE
         if (item.tipoMaterial && item.tipoMaterial.includes('Bagaço')) {
-          bagaco += parsePeso(item.peso);
+          bagaco = parsePeso(item.peso);  // ✅ SUBSTITUI em vez de SOMAR
           return false;
         }
 
@@ -226,11 +226,11 @@ export default function NovaLeiraScreen() {
         return ehBiossolido && !ehPiscinao;
       });
 
-      setEstoquePatio(patio); setEstoqueDep1(dep1); setEstoqueDep2(dep2); 
+      setEstoquePatio(patio); setEstoqueDep1(dep1); setEstoqueDep2(dep2);
       setEstoqueBagaco(bagaco); // 🔥 ATUALIZA O ESTADO DO BAGAÇO
-      
+
       setMtrsPatio([...new Set(mPatio)]); setMtrsDep1([...new Set(mDep1)]); setMtrsDep2([...new Set(mDep2)]);
-      
+
       const biossolidosOrdenados = biossolidosDisponiveis.sort((a: any, b: any) => Number(b.id) - Number(a.id));
       setBiossólidos(biossolidosOrdenados);
 
@@ -291,11 +291,11 @@ export default function NovaLeiraScreen() {
       }
     }
   };
-  
-    const handleFormarLeira = async () => {
+
+  const handleFormarLeira = async () => {
     let novaLeira: Leira;
     const isGranel = ['Pátio de Mistura', 'Depósito 1', 'Depósito 2'].includes(piscinaoSelecionado);
-    
+
     // 🔥 CAPTURA E VALIDA O NÚMERO DA LEIRA
     const numeroFinal = parseInt(numeroLeiraManual);
     if (!numeroFinal || numeroFinal <= 0) {
@@ -314,7 +314,7 @@ export default function NovaLeiraScreen() {
 
     if (modoManual) {
       const pesoBio = parsePeso(pesoManualBio);
-      const pesoBagaco = parsePeso(pesoManualBagaco); 
+      const pesoBagaco = parsePeso(pesoManualBagaco);
       bagacoUtilizado = pesoBagaco;
 
       if (pesoBio <= 0) { Alert.alert('Atenção', 'Informe o peso do material.'); return; }
@@ -330,8 +330,8 @@ export default function NovaLeiraScreen() {
         let estoqueDisponivel = 0;
         let mtrsHerdados: string[] = [];
 
-        if (piscinaoSelecionado === 'Pátio de Mistura') { estoqueDisponivel = estoquePatio; mtrsHerdados = mtrsPatio; } 
-        else if (piscinaoSelecionado === 'Depósito 1') { estoqueDisponivel = estoqueDep1; mtrsHerdados = mtrsDep1; } 
+        if (piscinaoSelecionado === 'Pátio de Mistura') { estoqueDisponivel = estoquePatio; mtrsHerdados = mtrsPatio; }
+        else if (piscinaoSelecionado === 'Depósito 1') { estoqueDisponivel = estoqueDep1; mtrsHerdados = mtrsDep1; }
         else if (piscinaoSelecionado === 'Depósito 2') { estoqueDisponivel = estoqueDep2; mtrsHerdados = mtrsDep2; }
 
         if (pesoBio > estoqueDisponivel) {
@@ -351,7 +351,7 @@ export default function NovaLeiraScreen() {
           biossólidos: [],
           bagaço: pesoBagaco,
           totalBiossólido: pesoBio,
-          tipoFormacao: piscinaoSelecionado 
+          tipoFormacao: piscinaoSelecionado
         } as any;
       } else {
         const itemManual: BiossólidoEntry = {
@@ -373,7 +373,7 @@ export default function NovaLeiraScreen() {
       }
     } else {
       bagacoUtilizado = 12; // MTR usa 12t fixo
-      
+
       if (selectedBiossólidos.length < 3 || selectedBiossólidos.length > 4) {
         Alert.alert('Atenção', 'Selecione 3 ou 4 viagens para formar a leira.');
         return;
@@ -411,53 +411,53 @@ export default function NovaLeiraScreen() {
       const materiaisRegistrados = await AsyncStorage.getItem('materiaisRegistrados');
       if (materiaisRegistrados) {
         let materiais = JSON.parse(materiaisRegistrados);
-        
+
         // 1. DESCONTA O BAGAÇO
         if (bagacoUtilizado > 0) {
-           const bagacoDisponivel = materiais.filter((m: any) => m.tipoMaterial && m.tipoMaterial.includes('Bagaço') && !m.usado);
-           
-           materiais = materiais.map((m: any) => {
-             if (bagacoDisponivel.some((b: any) => b.id === m.id)) {
-               const atualizado = { ...m, usado: true, sincronizado: false };
-               syncService.adicionarFila('material', atualizado);
-               return atualizado;
-             }
-             return m;
-           });
+          const bagacoDisponivel = materiais.filter((m: any) => m.tipoMaterial && m.tipoMaterial.includes('Bagaço') && !m.usado);
 
-           const saldoRestanteBagaco = estoqueBagaco - bagacoUtilizado;
-           if (saldoRestanteBagaco > 0) {
-             const loteRestanteBagaco = {
-               id: `bagaco-${Date.now()}`,
-               data: modoManual ? dataManual : new Date().toLocaleDateString('pt-BR'),
-               tipoMaterial: 'Bagaço de Cana',
-               numeroMTR: 'SALDO REMANESCENTE',
-               peso: saldoRestanteBagaco.toFixed(2),
-               origem: 'Estoque Interno',
-               destino: 'Depósito',
-               sincronizado: false,
-               usado: false,
-               mtrsOriginais: []
-             };
-             materiais.push(loteRestanteBagaco);
-             await syncService.adicionarFila('material', loteRestanteBagaco);
-           }
+          materiais = materiais.map((m: any) => {
+            if (bagacoDisponivel.some((b: any) => b.id === m.id)) {
+              const atualizado = { ...m, usado: true, sincronizado: false };
+              syncService.adicionarFila('material', atualizado);
+              return atualizado;
+            }
+            return m;
+          });
 
-           // 📝 ==========================================
-           // SENSOR 5: SAÍDA PARA FORMAÇÃO DE LEIRA
-           // ==========================================
-           const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
-           const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
-           extrato.push({
-               id: Date.now().toString(),
-               data: new Date().toLocaleDateString('pt-BR'),
-               hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-               tipo: 'SAIDA',
-               quantidade: bagacoUtilizado,
-               motivo: `Formação da Leira #${numeroFinal}`
-           });
-           await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
-           // ==========================================
+          const saldoRestanteBagaco = estoqueBagaco - bagacoUtilizado;
+          if (saldoRestanteBagaco > 0) {
+            const loteRestanteBagaco = {
+              id: `bagaco-${Date.now()}`,
+              data: modoManual ? dataManual : new Date().toLocaleDateString('pt-BR'),
+              tipoMaterial: 'Bagaço de Cana',
+              numeroMTR: 'SALDO REMANESCENTE',
+              peso: saldoRestanteBagaco.toFixed(2),
+              origem: 'Estoque Interno',
+              destino: 'Depósito',
+              sincronizado: false,
+              usado: false,
+              mtrsOriginais: []
+            };
+            materiais.push(loteRestanteBagaco);
+            await syncService.adicionarFila('material', loteRestanteBagaco);
+          }
+
+          // 📝 ==========================================
+          // SENSOR 5: SAÍDA PARA FORMAÇÃO DE LEIRA
+          // ==========================================
+          const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+          const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+          extrato.push({
+            id: Date.now().toString(),
+            data: new Date().toLocaleDateString('pt-BR'),
+            hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+            tipo: 'SAIDA',
+            quantidade: bagacoUtilizado,
+            motivo: `Formação da Leira #${numeroFinal}`
+          });
+          await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+          // ==========================================
         }
 
         // 2. DESCONTA O PÁTIO/DEPÓSITO
@@ -467,7 +467,7 @@ export default function NovaLeiraScreen() {
             const isMistura = m.tipoMaterial === 'Mistura Preparada' || ['Pátio de Mistura', 'Depósito 1', 'Depósito 2'].includes(destinoItem);
             return isMistura && destinoItem === piscinaoSelecionado && !m.usado;
           });
-          
+
           materiais = materiais.map((m: any) => {
             if (lotesDaOrigem.some((l: any) => l.id === m.id)) {
               const atualizado = { ...m, usado: true, sincronizado: false };
@@ -478,33 +478,33 @@ export default function NovaLeiraScreen() {
           });
 
           const saldoRestante = (piscinaoSelecionado === 'Pátio de Mistura' ? estoquePatio : piscinaoSelecionado === 'Depósito 1' ? estoqueDep1 : estoqueDep2) - parsePeso(pesoManualBio);
-          
+
           if (saldoRestante > 0) {
             const loteRestante = {
-              id: `mistura-${Date.now() + 1}`, 
-              data: dataManual, 
-              tipoMaterial: 'Mistura Preparada', 
-              numeroMTR: 'SALDO REMANESCENTE', 
-              peso: saldoRestante.toFixed(2), 
-              origem: 'Processo Interno', 
-              destino: piscinaoSelecionado, 
-              sincronizado: false, 
-              usado: false, 
+              id: `mistura-${Date.now() + 1}`,
+              data: dataManual,
+              tipoMaterial: 'Mistura Preparada',
+              numeroMTR: 'SALDO REMANESCENTE',
+              peso: saldoRestante.toFixed(2),
+              origem: 'Processo Interno',
+              destino: piscinaoSelecionado,
+              sincronizado: false,
+              usado: false,
               mtrsOriginais: (novaLeira as any).mtrsOriginais || []
             };
             materiais.push(loteRestante);
             await syncService.adicionarFila('material', loteRestante);
           }
-        } 
+        }
         // 3. CARIMBA OS CAMINHÕES (MTR)
         else if (!modoManual) {
           materiais = materiais.map((item: any) => {
             if (selectedBiossólidos.includes(item.id)) {
-              const atualizado = { ...item, usado: true }; 
+              const atualizado = { ...item, usado: true };
               syncService.adicionarFila('material', atualizado);
               return atualizado;
             }
-            return item; 
+            return item;
           });
         }
 
@@ -514,7 +514,7 @@ export default function NovaLeiraScreen() {
 
       setPesoManualBio(''); setPesoManualBagaco(''); setDataManual(new Date().toLocaleDateString('pt-BR'));
       setSelectedBiossólidos([]); setShowForm(false);
-      
+
       if (typeof loadData === 'function') await loadData();
 
       Alert.alert('Sucesso! ✅', `Leira #${novaLeira.numeroLeira} formada com sucesso!`);
@@ -555,47 +555,47 @@ export default function NovaLeiraScreen() {
       if (devolverAoEstoque) {
         const materiaisRegistrados = await AsyncStorage.getItem('materiaisRegistrados');
         const materiais = materiaisRegistrados ? JSON.parse(materiaisRegistrados) : [];
-        
+
         let novosMateriais = [...materiais];
 
         // 1. Devolve os biossólidos (se for MTR)
         if (leira.tipoFormacao === 'MTR' && leira.biossólidos) {
-            novosMateriais = [...novosMateriais, ...leira.biossólidos];
+          novosMateriais = [...novosMateriais, ...leira.biossólidos];
         }
 
         // 2. Devolve o Bagaço para o estoque geral
         const pesoBagacoDevolver = leira.bagaço || 0;
         if (pesoBagacoDevolver > 0) {
-            const timestamp = Date.now();
-            const devolucaoBagaco = {
-                id: `estorno-bagaco-${timestamp}`,
-                data: new Date().toLocaleDateString('pt-BR'),
-                tipoMaterial: 'Bagaço de Cana',
-                numeroMTR: 'ESTORNO',
-                peso: pesoBagacoDevolver.toString(),
-                origem: `Estorno Leira #${leira.numeroLeira}`,
-                destino: 'Estoque Bagaço',
-                sincronizado: false,
-                usado: false
-            };
-            novosMateriais.push(devolucaoBagaco);
-            await syncService.adicionarFila('material', devolucaoBagaco);
+          const timestamp = Date.now();
+          const devolucaoBagaco = {
+            id: `estorno-bagaco-${timestamp}`,
+            data: new Date().toLocaleDateString('pt-BR'),
+            tipoMaterial: 'Bagaço de Cana',
+            numeroMTR: 'ESTORNO',
+            peso: pesoBagacoDevolver.toString(),
+            origem: `Estorno Leira #${leira.numeroLeira}`,
+            destino: 'Estoque Bagaço',
+            sincronizado: false,
+            usado: false
+          };
+          novosMateriais.push(devolucaoBagaco);
+          await syncService.adicionarFila('material', devolucaoBagaco);
 
-            // 📝 ==========================================
-            // SENSOR FINAL: ESTORNO DE FORMAÇÃO (ENTRADA DE BAGAÇO)
-            // ==========================================
-            const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
-            const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
-            extrato.push({
-                id: timestamp.toString(),
-                data: new Date().toLocaleDateString('pt-BR'),
-                hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-                tipo: 'ENTRADA',
-                quantidade: pesoBagacoDevolver,
-                motivo: `Exclusão/Estorno da Leira #${leira.numeroLeira}`
-            });
-            await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
-            // ==========================================
+          // 📝 ==========================================
+          // SENSOR FINAL: ESTORNO DE FORMAÇÃO (ENTRADA DE BAGAÇO)
+          // ==========================================
+          const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+          const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+          extrato.push({
+            id: timestamp.toString(),
+            data: new Date().toLocaleDateString('pt-BR'),
+            hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+            tipo: 'ENTRADA',
+            quantidade: pesoBagacoDevolver,
+            motivo: `Exclusão/Estorno da Leira #${leira.numeroLeira}`
+          });
+          await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+          // ==========================================
         }
 
         await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(novosMateriais));
@@ -611,16 +611,16 @@ export default function NovaLeiraScreen() {
       Alert.alert('Erro', 'Falha ao excluir leira.');
     }
   };
-  
+
   const totalBioSelecionado = modoManual
     ? parsePeso(pesoManualBio)
     : biossólidos.filter((item) => selectedBiossólidos.includes(item.id)).reduce((acc, item) => acc + parsePeso(item.peso), 0);
 
-    
+
   const totalBagaco = modoManual ? parsePeso(pesoManualBagaco) : 12;
   // ===== LÓGICA DE FILTRO E BUSCA =====
   const dataDeHoje = new Date().toLocaleDateString('pt-BR');
-  
+
   const leirasFiltradas = leiras.filter((leira) => {
     // 1. Filtro dos Botões (Chips)
     if (filtroLeiras === 'hoje' && leira.dataFormacao !== dataDeHoje) {
@@ -641,12 +641,12 @@ export default function NovaLeiraScreen() {
 
   // 🔥 Como agora temos os botões, não precisamos mais limitar a 5.
   // Mostramos todas que passarem no filtro, ordenadas da mais nova para a mais velha.
-  const leirasParaExibir = buscaLeira.trim() 
-    ? leirasFiltradas 
+  const leirasParaExibir = buscaLeira.trim()
+    ? leirasFiltradas
     : [...leirasFiltradas].sort((a, b) => b.numeroLeira - a.numeroLeira).slice(0, 5);
-  
 
-  
+
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -660,7 +660,7 @@ export default function NovaLeiraScreen() {
   const isGranel = ['Pátio de Mistura', 'Depósito 1', 'Depósito 2'].includes(piscinaoSelecionado);
   const saldoAtual = piscinaoSelecionado === 'Pátio de Mistura' ? estoquePatio : piscinaoSelecionado === 'Depósito 1' ? estoqueDep1 : piscinaoSelecionado === 'Depósito 2' ? estoqueDep2 : 0;
 
-    return (
+  return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -732,16 +732,16 @@ export default function NovaLeiraScreen() {
                   </View>
 
                   {/* CAMPO CLICÁVEL (DROPDOWN) */}
-                  <TouchableOpacity 
-                    style={[styles.inputWrapper, { justifyContent: 'space-between', marginBottom: isGranel ? 8 : 16 }]} 
+                  <TouchableOpacity
+                    style={[styles.inputWrapper, { justifyContent: 'space-between', marginBottom: isGranel ? 8 : 16 }]}
                     onPress={() => setShowModalDestino(true)}
                   >
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <MaterialCommunityIcons 
-                        name={piscinaoSelecionado.toLowerCase().includes('piscin') || piscinaoSelecionado.toLowerCase().includes('tanque') ? 'water' : piscinaoSelecionado.toLowerCase().includes('pátio') ? 'pot-mix' : 'warehouse'} 
-                        size={20} 
-                        color={PALETTE.verdePrimario} 
-                        style={{ marginRight: 10 }} 
+                      <MaterialCommunityIcons
+                        name={piscinaoSelecionado.toLowerCase().includes('piscin') || piscinaoSelecionado.toLowerCase().includes('tanque') ? 'water' : piscinaoSelecionado.toLowerCase().includes('pátio') ? 'pot-mix' : 'warehouse'}
+                        size={20}
+                        color={PALETTE.verdePrimario}
+                        style={{ marginRight: 10 }}
                       />
                       <Text style={styles.input}>{piscinaoSelecionado}</Text>
                     </View>
@@ -888,7 +888,7 @@ export default function NovaLeiraScreen() {
               <Text style={[styles.listTitle, { marginBottom: 0, flex: 1 }]}>
                 {buscaLeira.trim() ? `Resultados (${leirasParaExibir.length})` : 'Leiras Formadas'}
               </Text>
-              
+
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <TouchableOpacity
                   style={[styles.filterChip, filtroLeiras === 'hoje' && styles.filterChipActive]}
@@ -968,14 +968,14 @@ export default function NovaLeiraScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Selecione o Local</Text>
-            
+
             <ScrollView style={{ maxHeight: 450, marginBottom: 20 }} showsVerticalScrollIndicator={false}>
-              
+
               {/* FUNÇÃO PARA RENDERIZAR CADA ITEM */}
               {(() => {
                 const renderItem = (item: string) => (
-                  <TouchableOpacity 
-                    key={item} 
+                  <TouchableOpacity
+                    key={item}
                     style={{
                       paddingVertical: 12,
                       borderBottomWidth: 1,
@@ -990,14 +990,14 @@ export default function NovaLeiraScreen() {
                     }}
                   >
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <MaterialCommunityIcons 
-                        name={item.toLowerCase().includes('piscin') || item.toLowerCase().includes('tanque') ? 'water' : item.toLowerCase().includes('pátio') ? 'pot-mix' : 'warehouse'} 
-                        size={22} 
-                        color={piscinaoSelecionado === item ? PALETTE.verdePrimario : PALETTE.cinza} 
-                        style={{ marginRight: 12 }} 
+                      <MaterialCommunityIcons
+                        name={item.toLowerCase().includes('piscin') || item.toLowerCase().includes('tanque') ? 'water' : item.toLowerCase().includes('pátio') ? 'pot-mix' : 'warehouse'}
+                        size={22}
+                        color={piscinaoSelecionado === item ? PALETTE.verdePrimario : PALETTE.cinza}
+                        style={{ marginRight: 12 }}
                       />
-                      <Text style={{ 
-                        fontSize: 15, 
+                      <Text style={{
+                        fontSize: 15,
                         color: piscinaoSelecionado === item ? PALETTE.verdePrimario : PALETTE.preto,
                         fontWeight: piscinaoSelecionado === item ? 'bold' : '500'
                       }}>
@@ -1399,7 +1399,7 @@ const styles = StyleSheet.create({
   modalBtnCancelarText: { fontWeight: '700', color: PALETTE.cinza, fontSize: 15 },
   modalBtnConfirmar: { flex: 1, paddingVertical: 14, backgroundColor: PALETTE.verdePrimario, borderRadius: 12, alignItems: 'center' },
   modalBtnConfirmarText: { fontWeight: '700', color: PALETTE.branco, fontSize: 15 },
-    // 🔥 ESTILOS DOS BOTÕES DE FILTRO (CHIPS)
+  // 🔥 ESTILOS DOS BOTÕES DE FILTRO (CHIPS)
   filterChip: {
     paddingVertical: 6,
     paddingHorizontal: 12,

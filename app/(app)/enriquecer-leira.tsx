@@ -14,72 +14,51 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { syncService } from '@/services/sync';
+import { Platform } from 'react-native';
 
+// ===== NOVO DESIGN SYSTEM (PADRÃO PUCCI) =====
 const PALETTE = {
-  verdePrimario: '#5D7261',
-  verdeClaro: '#F0F5F0',
+  verdePrimario: '#2E4F36',
+  verdeClaro: '#F4F7F4',
+  verdeCard: '#E8EFE9',
+  terracota: '#B16338',
+  terracotaClaro: '#FDF3EE',
   branco: '#FFFFFF',
-  preto: '#1A1A1A',
-  cinza: '#9E9E9E',
-  cinzaEscuro: '#424242',
-  cinzaClaro: '#E0E0E0',
-  cinzaClaro2: '#F5F5F5',
-  alerta: '#F57C00',
+  preto: '#1A2B22',
+  cinza: '#6B7A71',
+  cinzaClaro: '#E1E8E3',
+  erro: '#DC3545',
+  erroClaro: '#FCEAEA',
+  sucesso: '#28A745',
+  sucessoClaro: '#EAF6EC',
+  warning: '#EAB308',
+  warningClaro: '#FEF5E7',
+  info: '#0D6EFD',
+  infoClaro: '#E7F1FF',
+  azulPiscinao: '#0D6EFD',
 };
 
-// 🌟 CONFIGURAÇÃO DE MATERIAIS (Agora com Depósito 1 e 2 separados)
+// 🌟 CONFIGURAÇÃO DE MATERIAIS (Atualizado com a nova Paleta)
 const TIPOS_MATERIAL = [
-  { 
-    id: 'Biossólido', 
-    nome: 'Biossólido', 
-    icone: 'recycle', 
-    cor: PALETTE.verdePrimario, 
-    bg: '#E8F5E9', 
-    exigeMTR: true 
-  },
-  { 
-    id: 'Bagaço', 
-    nome: 'Bagaço de Cana', 
-    icone: 'barley', 
-    cor: '#F57C00', 
-    bg: '#FFF3E0', 
-    exigeMTR: false 
-  },
-  { 
-    id: 'PatioMistura', 
-    nome: 'Pátio de Mistura', 
-    icone: 'pot-mix', 
-    cor: '#8D6E63',
-    bg: '#EFEBE9', 
-    exigeMTR: false 
-  },
-  { 
-    id: 'Deposito1', 
-    nome: 'Depósito 1', 
-    icone: 'warehouse', 
-    cor: '#5C6BC0',
-    bg: '#E8EAF6', 
-    exigeMTR: false 
-  },
-  { 
-    id: 'Deposito2', 
-    nome: 'Depósito 2', 
-    icone: 'warehouse', 
-    cor: '#3949AB',
-    bg: '#E8EAF6', 
-    exigeMTR: false 
-  }
+  { id: 'Biossólido', nome: 'Biossólido', icone: 'recycle', cor: PALETTE.verdePrimario, bg: PALETTE.verdeCard, exigeMTR: true },
+  { id: 'Bagaço', nome: 'Bagaço de Cana', icone: 'barley', cor: PALETTE.terracota, bg: PALETTE.terracotaClaro, exigeMTR: false },
+  { id: 'PatioMistura', nome: 'Pátio de Mistura', icone: 'pot-mix', cor: PALETTE.cinza, bg: PALETTE.cinzaClaro, exigeMTR: false },
+  { id: 'Deposito1', nome: 'Depósito 1', icone: 'warehouse', cor: PALETTE.info, bg: PALETTE.infoClaro, exigeMTR: false },
+  { id: 'Deposito2', nome: 'Depósito 2', icone: 'warehouse', cor: PALETTE.azulPiscinao, bg: PALETTE.infoClaro, exigeMTR: false }
 ];
+
+
+
 
 export default function EnriquecerLeiraScreen() {
   const router = useRouter();
-  
+
   const [loading, setLoading] = useState(true);
   const [leiras, setLeiras] = useState<any[]>([]);
   const [leiraSelecionada, setLeiraSelecionada] = useState<any>(null);
   const [materialSelecionado, setMaterialSelecionado] = useState(TIPOS_MATERIAL[0]);
   const [estoqueDisponivel, setEstoqueDisponivel] = useState<number | null>(null);
-  
+
   const [buscaLeira, setBuscaLeira] = useState('');
 
   const [formData, setFormData] = useState({
@@ -98,8 +77,8 @@ export default function EnriquecerLeiraScreen() {
     calcularEstoqueDisponivel();
   }, [materialSelecionado]);
 
-  // 🔥 NOVA: Função que calcula quanto tem no estoque (Separando os depósitos)
-   // 🔥 NOVA: Função que calcula quanto tem no estoque (Com Normalizador)
+
+  // 🔥 Função que calcula quanto tem no estoque (Com Normalizador)
   const calcularEstoqueDisponivel = async () => {
     if (materialSelecionado.id === 'Biossólido') {
       setEstoqueDisponivel(null);
@@ -120,6 +99,8 @@ export default function EnriquecerLeiraScreen() {
           const tipoNorm = mat.tipoMaterial ? String(mat.tipoMaterial).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') : '';
 
           let atendeFiltro = false;
+
+          // Lógica de filtro baseada no material selecionado
           if (materialSelecionado.id === 'Bagaço' && tipoNorm.includes('bagaco')) {
             atendeFiltro = true;
           } else if (materialSelecionado.id === 'PatioMistura' && destinoNorm.includes('patio')) {
@@ -131,7 +112,8 @@ export default function EnriquecerLeiraScreen() {
           }
 
           if (atendeFiltro) {
-            total += parseFloat(String(mat.peso).replace(',', '.'));
+            // 🔥 CORREÇÃO: SUBSTITUI em vez de SOMAR (pega apenas o mais recente)
+            total = parseFloat(String(mat.peso).replace(',', '.'));
           }
         });
 
@@ -144,14 +126,25 @@ export default function EnriquecerLeiraScreen() {
       setEstoqueDisponivel(0);
     }
   };
-
   const carregarLeiras = async () => {
     try {
       setLoading(true);
       const leirasRegistradas = await AsyncStorage.getItem('leirasFormadas');
       if (leirasRegistradas) {
         const leirasData = JSON.parse(leirasRegistradas);
-        const leirasAtivas = leirasData.filter((l: any) => l.status !== 'pronta');
+
+        // 🔥 FILTRO BLINDADO: Remove leiras prontas, finalizadas ou arquivadas
+        const leirasAtivas = leirasData.filter((l: any) => {
+          // Normaliza o status: tira acentos, espaços extras e deixa tudo minúsculo
+          const statusNorm = l.status
+            ? String(l.status).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim()
+            : '';
+
+          // Filtra usando as palavras já normalizadas
+          return statusNorm !== 'pronta' && statusNorm !== 'finalizada' && statusNorm !== 'arquivada';
+        });
+
+        // Ordena da mais recente para a mais antiga
         leirasAtivas.sort((a: any, b: any) => Number(b.id) - Number(a.id));
         setLeiras(leirasAtivas);
       }
@@ -180,12 +173,12 @@ export default function EnriquecerLeiraScreen() {
     return total;
   };
 
-    
-    const handleSalvar = async () => {
+
+  const handleSalvar = async () => {
     if (!leiraSelecionada) return Alert.alert('Erro', 'Selecione uma leira primeiro.');
     if (!formData.data.trim()) return Alert.alert('Erro', 'Digite a data.');
     if (!formData.pesoAdicionado.trim()) return Alert.alert('Erro', 'Digite o peso adicionado.');
-    
+
     const pesoAdicionado = parseFloat(formData.pesoAdicionado.replace(',', '.'));
     if (isNaN(pesoAdicionado) || pesoAdicionado <= 0) {
       return Alert.alert('Erro', 'Peso deve ser um número maior que 0.');
@@ -197,7 +190,7 @@ export default function EnriquecerLeiraScreen() {
 
     if (estoqueDisponivel !== null && pesoAdicionado > estoqueDisponivel) {
       return Alert.alert(
-        'Estoque Insuficiente ⚠️', 
+        'Estoque Insuficiente ⚠️',
         `Você está tentando adicionar ${pesoAdicionado} ton, mas só há ${estoqueDisponivel.toFixed(2)} ton disponíveis de ${materialSelecionado.nome} no estoque.`
       );
     }
@@ -217,7 +210,7 @@ export default function EnriquecerLeiraScreen() {
 
           for (let i = 0; i < materiais.length; i++) {
             if (pesoRestante <= 0) break;
-            
+
             let mat = materiais[i];
             if (mat.usado) continue;
 
@@ -237,7 +230,7 @@ export default function EnriquecerLeiraScreen() {
 
             if (atendeFiltro) {
               let pesoDisponivel = parseFloat(String(mat.peso).replace(',', '.'));
-              
+
               if (pesoDisponivel > pesoRestante) {
                 mat.peso = (pesoDisponivel - pesoRestante).toFixed(2);
                 pesoRestante = 0;
@@ -298,29 +291,29 @@ export default function EnriquecerLeiraScreen() {
       // SENSOR 4: SAÍDA PARA ENRIQUECIMENTO
       // ==========================================
       if (materialSelecionado.id === 'Bagaço') {
-          const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
-          const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
-          extrato.push({
-              id: Date.now().toString(),
-              data: new Date().toLocaleDateString('pt-BR'),
-              hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-              tipo: 'SAIDA',
-              quantidade: pesoAdicionado,
-              motivo: `Enriquecimento da Leira #${leiraSelecionada.numeroLeira}`
-          });
-          await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
+        const extratoSalvo = await AsyncStorage.getItem('extratoBagaco');
+        const extrato = extratoSalvo ? JSON.parse(extratoSalvo) : [];
+        extrato.push({
+          id: Date.now().toString(),
+          data: new Date().toLocaleDateString('pt-BR'),
+          hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          tipo: 'SAIDA',
+          quantidade: pesoAdicionado,
+          motivo: `Enriquecimento da Leira #${leiraSelecionada.numeroLeira}`
+        });
+        await AsyncStorage.setItem('extratoBagaco', JSON.stringify(extrato));
       }
       // ==========================================
 
       await syncService.adicionarFila('enriquecimento', novoEnriquecimento);
       const temInternet = await syncService.verificarInternet();
-      
+
       if (temInternet) {
         await syncService.sincronizar();
       }
 
       Alert.alert(
-        'Sucesso! ✅', 
+        'Sucesso! ✅',
         `${pesoAdicionado} ton adicionadas na Leira #${leiraSelecionada.numeroLeira}.`,
         [{ text: 'OK', onPress: () => router.back() }]
       );
@@ -334,7 +327,7 @@ export default function EnriquecerLeiraScreen() {
   const leirasFiltradas = leiras.filter(leira => {
     const termoBusca = buscaLeira.toLowerCase();
     return (
-      leira.numeroLeira.toString().includes(termoBusca) || 
+      leira.numeroLeira.toString().includes(termoBusca) ||
       (leira.lote && leira.lote.toLowerCase().includes(termoBusca))
     );
   });
@@ -351,11 +344,10 @@ export default function EnriquecerLeiraScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
+
         {/* HEADER */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={PALETTE.cinzaEscuro} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Enriquecer Leira</Text>
           <View style={styles.backButton} />
@@ -364,7 +356,7 @@ export default function EnriquecerLeiraScreen() {
         {/* 1. SELEÇÃO DE LEIRA */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>1. Selecione a Leira</Text>
-          
+
           {/* Barra de Busca */}
           {leiras.length > 0 && (
             <View style={styles.searchContainer}>
@@ -383,7 +375,7 @@ export default function EnriquecerLeiraScreen() {
               )}
             </View>
           )}
-          
+
           {leiras.length === 0 ? (
             <View style={styles.emptyBox}>
               <Text style={{ color: PALETTE.cinza }}>Nenhuma leira ativa encontrada.</Text>
@@ -405,14 +397,14 @@ export default function EnriquecerLeiraScreen() {
                     ]}
                     onPress={() => setLeiraSelecionada(leira)}
                   >
-                    <Text style={[styles.leiraNumber, isSelected && { color: PALETTE.branco }]}>
+                    <Text style={[styles.leiraNumber, isSelected && { color: PALETTE.cinza }]}>
                       #{leira.numeroLeira}
                     </Text>
-                    <Text style={[styles.leiraLote, isSelected && { color: '#E8F5E9' }]}>
+                    <Text style={[styles.leiraLote, isSelected && { color: PALETTE.cinza }]}>
                       Lote {leira.lote}
                     </Text>
                     <View style={[styles.statusBadge, isSelected && { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-                      <Text style={[styles.statusText, isSelected && { color: PALETTE.branco }]}>
+                      <Text style={[styles.statusText, isSelected && { color: PALETTE.cinza }]}>
                         {leira.status}
                       </Text>
                     </View>
@@ -427,7 +419,7 @@ export default function EnriquecerLeiraScreen() {
         {leiraSelecionada && (
           <View style={styles.formCard}>
             <Text style={styles.sectionTitle}>2. Dados do Enriquecimento</Text>
-            
+
             {/* SELETOR DE MATERIAL DINÂMICO */}
             <View style={styles.formGroup}>
               <Text style={styles.label}>O que será adicionado?</Text>
@@ -443,14 +435,14 @@ export default function EnriquecerLeiraScreen() {
                       ]}
                       onPress={() => setMaterialSelecionado(mat)}
                     >
-                      <MaterialCommunityIcons 
-                        name={mat.icone as any} 
-                        size={28} 
-                        color={isSelected ? mat.cor : PALETTE.cinza} 
-                        style={{ marginBottom: 8 }} 
+                      <MaterialCommunityIcons
+                        name={mat.icone as any}
+                        size={28}
+                        color={isSelected ? mat.cor : PALETTE.cinza}
+                        style={{ marginBottom: 8 }}
                       />
                       <Text style={[
-                        styles.materialBtnText, 
+                        styles.materialBtnText,
                         isSelected && { color: mat.cor, fontWeight: 'bold' }
                       ]}>
                         {mat.nome}
@@ -480,7 +472,7 @@ export default function EnriquecerLeiraScreen() {
             <View style={styles.formGroup}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <Text style={[styles.label, { marginBottom: 0 }]}>⚖️ Peso Adicionado (ton)</Text>
-                
+
                 {/* 🔥 NOVO: Mostrador de Estoque Dinâmico */}
                 {estoqueDisponivel !== null && (
                   <View style={{ backgroundColor: estoqueDisponivel <= 0 ? '#FFEBEE' : '#E3F2FD', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
@@ -490,7 +482,7 @@ export default function EnriquecerLeiraScreen() {
                   </View>
                 )}
               </View>
-              
+
               <View style={styles.inputBox}>
                 <RNTextInput
                   style={styles.input}
@@ -504,17 +496,17 @@ export default function EnriquecerLeiraScreen() {
 
             {/* MTR DINÂMICO */}
             {materialSelecionado.exigeMTR && (
-               <View style={styles.formGroup}>
-                 <Text style={styles.label}>🔢 Número MTR *</Text>
-                 <View style={styles.inputBox}>
-                   <RNTextInput
-                     style={styles.input}
-                     placeholder="Ex: MTR-2025-0001"
-                     value={formData.numeroMTR}
-                     onChangeText={(text) => setFormData({ ...formData, numeroMTR: text })}
-                   />
-                 </View>
-               </View>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>🔢 Número MTR *</Text>
+                <View style={styles.inputBox}>
+                  <RNTextInput
+                    style={styles.input}
+                    placeholder="Ex: MTR-2025-0001"
+                    value={formData.numeroMTR}
+                    onChangeText={(text) => setFormData({ ...formData, numeroMTR: text })}
+                  />
+                </View>
+              </View>
             )}
 
             {/* ORIGEM */}
@@ -546,12 +538,12 @@ export default function EnriquecerLeiraScreen() {
             </View>
 
             {/* BOTÃO SALVAR INTELIGENTE */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
-                styles.submitBtn, 
+                styles.submitBtn,
                 { backgroundColor: materialSelecionado.cor },
                 (estoqueDisponivel !== null && estoqueDisponivel <= 0) && { opacity: 0.5 }
-              ]} 
+              ]}
               onPress={handleSalvar}
               disabled={estoqueDisponivel !== null && estoqueDisponivel <= 0}
             >
@@ -570,47 +562,45 @@ export default function EnriquecerLeiraScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: PALETTE.verdeClaro },
   scrollContent: { paddingBottom: 40 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: PALETTE.branco, borderBottomWidth: 1, borderColor: PALETTE.cinzaClaro2 },
-  backButton: { width: 40, height: 40, justifyContent: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: PALETTE.preto },
-  
-  section: { marginTop: 20 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: PALETTE.preto, marginLeft: 20, marginBottom: 12 },
-  
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: PALETTE.branco,
-    marginHorizontal: 20,
-    marginBottom: 16,
-    paddingHorizontal: 12,
-    height: 46,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: PALETTE.cinzaClaro,
-  },
+
+  // HEADER PADRÃO
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20, backgroundColor: PALETTE.branco, borderBottomWidth: 1, borderBottomColor: PALETTE.cinzaClaro },
+  backButton: { width: 40, alignItems: 'flex-start' },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: PALETTE.preto },
+
+  section: { marginTop: 24 },
+  sectionTitle: { fontSize: 14, fontWeight: '800', color: PALETTE.verdePrimario, marginLeft: 24, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  // BUSCA PADRÃO
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: PALETTE.branco, marginHorizontal: 24, marginBottom: 16, paddingHorizontal: 16, height: 52, borderRadius: 12, borderWidth: 1, borderColor: PALETTE.cinzaClaro, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4 },
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 14, color: PALETTE.preto },
+  searchInput: { flex: 1, fontSize: 15, fontWeight: '600', color: PALETTE.preto },
 
-  emptyBox: { marginHorizontal: 20, padding: 20, backgroundColor: PALETTE.branco, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: PALETTE.cinzaClaro },
-  
-  leiraCard: { width: 120, backgroundColor: PALETTE.branco, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: PALETTE.cinzaClaro, alignItems: 'center' },
-  leiraCardActive: { backgroundColor: PALETTE.verdePrimario, borderColor: PALETTE.verdePrimario },
-  leiraNumber: { fontSize: 24, fontWeight: 'bold', color: PALETTE.preto },
-  leiraLote: { fontSize: 12, color: PALETTE.cinza, marginTop: 4, marginBottom: 8 },
-  statusBadge: { backgroundColor: PALETTE.cinzaClaro2, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  statusText: { fontSize: 10, fontWeight: 'bold', color: PALETTE.cinzaEscuro, textTransform: 'capitalize' },
+  emptyBox: { marginHorizontal: 24, padding: 24, backgroundColor: PALETTE.branco, borderRadius: 16, alignItems: 'center', borderWidth: 1, borderColor: PALETTE.cinzaClaro },
 
-  formCard: { backgroundColor: PALETTE.branco, margin: 20, borderRadius: 16, padding: 20, elevation: 2 },
+  // CARDS DE LEIRA
+  leiraCard: { width: 140, backgroundColor: PALETTE.branco, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: PALETTE.cinzaClaro, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4 },
+  leiraCardActive: { backgroundColor: PALETTE.verdeCard, borderColor: PALETTE.verdePrimario, borderWidth: 2 },
+  leiraNumber: { fontSize: 24, fontWeight: '900', color: PALETTE.preto },
+  leiraLote: { fontSize: 12, color: PALETTE.cinza, marginTop: 4, marginBottom: 8, fontWeight: '600' },
+  statusBadge: { backgroundColor: PALETTE.cinzaClaro, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  statusText: { fontSize: 10, fontWeight: '800', color: PALETTE.cinza, textTransform: 'uppercase' },
+
+  // FORMULÁRIO PADRÃO
+  formCard: { backgroundColor: PALETTE.branco, margin: 24, borderRadius: 16, padding: 20, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 8 },
   formGroup: { marginBottom: 20 },
-  label: { fontSize: 12, fontWeight: 'bold', color: PALETTE.cinzaEscuro, marginBottom: 8, textTransform: 'uppercase' },
-  inputBox: { backgroundColor: PALETTE.cinzaClaro2, borderRadius: 10, paddingHorizontal: 16, height: 50, justifyContent: 'center', borderWidth: 1, borderColor: PALETTE.cinzaClaro },
-  input: { fontSize: 15, color: PALETTE.preto },
-  
+  label: { fontSize: 12, fontWeight: '700', color: PALETTE.cinza, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  // INPUTS PADRÃO
+  inputBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: PALETTE.verdeClaro, borderRadius: 12, paddingHorizontal: 16, height: 52, borderWidth: 1, borderColor: PALETTE.cinzaClaro },
+  input: { flex: 1, fontSize: 15, fontWeight: '600', color: PALETTE.preto },
+
+  // BOTÕES DE MATERIAL
   materialsGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
-  materialBtn: { flex: 1, minWidth: '45%', backgroundColor: PALETTE.cinzaClaro2, padding: 16, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: PALETTE.cinzaClaro },
-  materialBtnText: { fontSize: 14, color: PALETTE.cinza, fontWeight: '600', textAlign: 'center', marginTop: 4 },
-  
-  submitBtn: { padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 10 },
-  submitBtnText: { color: PALETTE.branco, fontSize: 16, fontWeight: 'bold' }
+  materialBtn: { flex: 1, minWidth: '45%', backgroundColor: PALETTE.verdeClaro, padding: 16, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: PALETTE.cinzaClaro },
+  materialBtnText: { fontSize: 13, color: PALETTE.cinza, fontWeight: '700', textAlign: 'center', marginTop: 8 },
+
+  // BOTÃO SALVAR
+  submitBtn: { height: 56, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 10, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 },
+  submitBtnText: { color: PALETTE.branco, fontSize: 16, fontWeight: '800' }
 });
