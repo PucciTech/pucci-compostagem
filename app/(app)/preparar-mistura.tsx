@@ -365,81 +365,113 @@ export default function PrepararMisturaScreen() {
         );
     };
     // ===== 3. TRANSFERIR DO PÁTIO PARA O DEPÓSITO =====
-    const handleTransferir = async () => {
-        const pesoTransf = parseFloat(pesoTransferencia.replace(',', '.'));
-        if (isNaN(pesoTransf) || pesoTransf <= 0) return Alert.alert('Atenção', 'Informe um peso válido para transferir.');
-        if (pesoTransf > estoquePatio) return Alert.alert('Atenção', 'Você não tem esse saldo disponível no Pátio de Mistura.');
+   const handleTransferir = async () => {
+    // 1. Validações Iniciais
+    if (!pesoTransferencia) return Alert.alert('Atenção', 'Informe o peso.');
+    
+    const pesoTransfNum = parseFloat(pesoTransferencia.replace(',', '.'));
+    if (isNaN(pesoTransfNum) || pesoTransfNum <= 0) {
+        return Alert.alert('Atenção', 'Informe um peso válido para transferir.');
+    }
+    if (pesoTransfNum > estoquePatio) {
+        return Alert.alert('Atenção', 'Você não tem esse saldo disponível no Pátio de Mistura.');
+    }
 
-        try {
-            setLoading(true);
-            const registros = await AsyncStorage.getItem('materiaisRegistrados');
-            let todosMateriais: MaterialEntry[] = registros ? JSON.parse(registros) : [];
-            const itensParaSincronizar: MaterialEntry[] = [];
+    try {
+        setLoading(true);
+        const registros = await AsyncStorage.getItem('materiaisRegistrados');
+        let todosMateriais: MaterialEntry[] = registros ? JSON.parse(registros) : [];
+        const itensParaSincronizar: MaterialEntry[] = [];
 
-            const lotesPatio = todosMateriais.filter(m => {
-                const destinoItem = m.destino ? m.destino.trim() : '';
-                return m.tipoMaterial === 'Mistura Preparada' && destinoItem === 'Pátio de Mistura' && !m.usado && !m.deletado;
-            });
+        // 2. Filtra os lotes disponíveis no Pátio
+        const lotesPatio = todosMateriais.filter(m => {
+            const destinoItem = m.destino ? m.destino.trim() : '';
+            return m.tipoMaterial === 'Mistura Preparada' && 
+                   destinoItem === 'Pátio de Mistura' && 
+                   !m.usado && 
+                   !m.deletado;
+        });
 
-            const todosMtrsDoPatio = lotesPatio.flatMap(l => l.mtrsOriginais || []);
-            const mtrsUnicos = [...new Set(todosMtrsDoPatio)];
+        // Ordena por ID (FIFO - os mais antigos primeiro)
+        lotesPatio.sort((a, b) => Number(a.id) - Number(b.id));
 
-            todosMateriais = todosMateriais.map(m => {
-                if (lotesPatio.some(l => l.id === m.id)) {
-                    const atualizado = { ...m, usado: true, sincronizado: false };
-                    itensParaSincronizar.push(atualizado);
-                    return atualizado;
-                }
-                return m;
-            });
+        let pesoRestanteParaTransferir = pesoTransfNum;
+        const mtrsContribuintes: string[] = [];
 
-            const timestamp = Date.now();
+        // 3. Loop FIFO: Desconta o volume dos lotes sem apagá-los (a menos que zerem)
+        for (const lote of lotesPatio) {
+            if (pesoRestanteParaTransferir <= 0) break;
 
-            const loteDeposito: MaterialEntry = {
-                id: timestamp.toString(),
-                data: new Date().toLocaleDateString('pt-BR'),
-                tipoMaterial: 'Mistura Preparada',
-                numeroMTR: `TRANSF-${timestamp.toString().slice(-4)}`,
-                peso: pesoTransf.toFixed(2),
-                origem: 'Pátio de Mistura',
-                destino: destinoTransferencia,
-                sincronizado: false,
-                usado: false,
-                mtrsOriginais: mtrsUnicos
-            };
-            todosMateriais.push(loteDeposito);
-            itensParaSincronizar.push(loteDeposito);
+            const pesoLoteAtual = parseFloat(lote.peso.replace(',', '.'));
+            
+            // Pula lotes que por algum motivo tenham peso 0
+            if (pesoLoteAtual <= 0) continue;
 
-            const saldoRestante = estoquePatio - pesoTransf;
-            if (saldoRestante > 0) {
-                const loteRestante: MaterialEntry = {
-                    id: (timestamp + 1).toString(),
-                    data: new Date().toLocaleDateString('pt-BR'),
-                    tipoMaterial: 'Mistura Preparada',
-                    numeroMTR: 'SALDO REMANESCENTE',
-                    peso: saldoRestante.toFixed(2),
-                    origem: 'Processo Interno',
-                    destino: 'Pátio de Mistura',
-                    sincronizado: false,
-                    usado: false,
-                    mtrsOriginais: mtrsUnicos
-                };
-                todosMateriais.push(loteRestante);
-                itensParaSincronizar.push(loteRestante);
+            const pesoADeduzir = Math.min(pesoRestanteParaTransferir, pesoLoteAtual);
+            const novoPesoLote = pesoLoteAtual - pesoADeduzir;
+
+            // Atualiza o lote original
+            lote.peso = novoPesoLote.toFixed(2).replace('.', ',');
+            
+            // 🔥 A MÁGICA ACONTECE AQUI: Só marca como usado se o lote zerar!
+            if (novoPesoLote === 0) {
+                lote.usado = true; 
+            }
+            
+            lote.sincronizado = false; // Precisa sincronizar a alteração de peso
+            itensParaSincronizar.push(lote);
+
+            // Guarda a rastreabilidade
+            if (lote.mtrsOriginais) {
+                mtrsContribuintes.push(...lote.mtrsOriginais);
+            } else if (lote.numeroMTR) {
+                mtrsContribuintes.push(lote.numeroMTR);
             }
 
-            await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(todosMateriais));
-            for (const item of itensParaSincronizar) await syncService.adicionarFila('material', item);
-
-            setPesoTransferencia('');
-            await loadData();
-            Alert.alert('Transferência Concluída! 🔄', `${pesoTransf}t enviadas para o ${destinoTransferencia}.`);
-
-        } catch (error) {
-            Alert.alert('Erro', 'Falha ao realizar a transferência.');
-            setLoading(false);
+            pesoRestanteParaTransferir -= pesoADeduzir;
         }
-    };
+
+        // 4. Cria o NOVO lote no destino (Depósito) com o volume exato transferido
+        const timestamp = Date.now();
+        const mtrsUnicos = [...new Set(mtrsContribuintes)];
+
+        const loteDeposito: MaterialEntry = {
+            id: timestamp.toString(),
+            data: new Date().toLocaleDateString('pt-BR'),
+            tipoMaterial: 'Mistura Preparada',
+            numeroMTR: `TRANSF-${timestamp.toString().slice(-4)}`,
+            peso: pesoTransfNum.toFixed(2).replace('.', ','), // Apenas o volume transferido
+            origem: 'Pátio de Mistura',
+            destino: destinoTransferencia,
+            sincronizado: false,
+            usado: false,
+            deletado: false,
+            mtrsOriginais: mtrsUnicos // Rastreabilidade de onde veio
+        };
+
+        todosMateriais.push(loteDeposito);
+        itensParaSincronizar.push(loteDeposito);
+
+        // 5. Salva no banco local e envia para a fila de sincronização
+        await AsyncStorage.setItem('materiaisRegistrados', JSON.stringify(todosMateriais));
+        
+        for (const item of itensParaSincronizar) {
+            await syncService.adicionarFila('material', item);
+        }
+
+        // 6. Limpa a tela e recarrega
+        setPesoTransferencia('');
+        await loadData();
+        
+        Alert.alert('Transferência Concluída! 🔄', `${pesoTransfNum}t enviadas para o ${destinoTransferencia}.`);
+
+    } catch (error) {
+        console.error("Erro na transferência:", error);
+        Alert.alert('Erro', 'Falha ao realizar a transferência.');
+    } finally {
+        setLoading(false);
+    }
+};
     // 🔥 NOVA FUNÇÃO: EDITAR MISTURA (BAGAÇO)
     const handleEditarMistura = async () => {
         if (!misturaEditando) return;
